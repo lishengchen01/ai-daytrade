@@ -1,6 +1,6 @@
 """Private-only personal trading research runner. No web serving, no orders."""
 import argparse
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import json
 import os
 import time
@@ -28,6 +28,8 @@ def watchlist(data, today, limit=5):
     if not dates:
         return []
     latest = max(dates)
+    if date.fromisoformat(today) - date.fromisoformat(latest) > timedelta(days=7):
+        return []  # no stale prior-day trading baseline
     rows = [r for r in data["rows"] if r.get("date") == latest
             and isinstance(r.get("symbol"), str)
             and isinstance(r.get("change"), (int, float))
