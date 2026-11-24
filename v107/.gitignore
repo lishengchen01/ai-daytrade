@@ -1,0 +1,8 @@
+# Keep licensed raw market data and credentials OUT of public git
+.env
+.env.*
+*.key
+private-context*.json
+private-signals*.json
+__pycache__/
+*.pyc
