@@ -1,0 +1,29 @@
+name: Public daily quotes
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 8 * * 1-5'
+permissions:
+  contents: read
+jobs:
+  quotes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python fetch_quotes.py
+      - run: |
+          mkdir site
+          cp index.html extra.js dashboard.js manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: quotes
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/deploy-pages@v4
