@@ -42,6 +42,10 @@ class FugleClient:
             raise MarketDataError("股票代碼不合法")
         return symbol
 
+    def ticker(self, symbol):
+        """Fugle trading eligibility/industry flags. Must also verify broker permissions."""
+        return self.transport("intraday/ticker/" + self._symbol(symbol))
+
     def quote(self, symbol):
         return self.transport("intraday/quote/" + self._symbol(symbol))
 
