@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '30 8 * * 1-5'
-permissions:
+permissions:D
   contents: read
 jobs:
   quotes:
@@ -13,7 +13,7 @@ jobs:
       - run: python fetch_quotes.py
       - run: |
           mkdir site
-          cp index.html extra.js dashboard.js manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
+          cp index.html extra.js dashboard.js monitor.js manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
