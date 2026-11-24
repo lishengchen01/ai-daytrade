@@ -1,0 +1,46 @@
+name: V1.06.1 iPhone notifications checks
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'index.html'
+      - 'sw.js'
+      - 'notifier-v1061.js'
+      - 'manifest.webmanifest'
+      - '.github/workflows/quotes.yml'
+      - '.github/workflows/v1061-notifications-test.yml'
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Javascript syntax
+        run: |
+          node --check notifier-v1061.js
+          node --check sw.js
+          node --check intraday-v106.js
+      - name: Check layout, PWA and build dependencies
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),assert=require('assert');
+          const html=fs.readFileSync('index.html','utf8');
+          const sw=fs.readFileSync('sw.js','utf8');
+          const deploy=fs.readFileSync('.github/workflows/quotes.yml','utf8');
+          const notify=fs.readFileSync('notifier-v1061.js','utf8');
+          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          for (const x of ['notify1061allow','notify1061test','notify1061check','notify1061status']) assert(html.includes(x));
+          for (const x of ['extra.js','dashboard.js','monitor.js','intraday-v106.js']) assert(html.includes(x),x);
+          assert(html.includes('<script src="notifier-v1061.js"></script>'));
+          assert(sw.includes("'./notifier-v1061.js'") && sw.includes("daytrade-v1061"));
+          assert(sw.includes("addEventListener('push'") && sw.includes("addEventListener('notificationclick'"));
+          assert(deploy.includes('notifier-v1061.js'));
+          assert(manifest.display==='standalone' && !!manifest.id);
+          assert(notify.includes("Notification.requestPermission()"));
+          assert(!notify.includes("FUGLE_API_KEY") && !html.includes("FUGLE_API_KEY"));
+          console.log('PASS: notifier, PWA, build dependencies and no embedded key');
+          NODE
