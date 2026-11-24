@@ -36,7 +36,7 @@ jobs:
           for (const x of ['notify1061allow','notify1061test','notify1061check','notify1061status']) assert(html.includes(x));
           for (const x of ['extra.js','dashboard.js','monitor.js','intraday-v106.js']) assert(html.includes(x),x);
           assert(html.includes('<script src="notifier-v1061.js"></script>'));
-          assert(sw.includes("'./notifier-v1061.js'") && sw.includes("daytrade-v1061"));
+          assert(sw.includes("'./notifier-v1061.js'") && /const C=\x27daytrade-v[0-9]+\x27/.test(sw));
           assert(sw.includes("addEventListener('push'") && sw.includes("addEventListener('notificationclick'"));
           assert(deploy.includes('notifier-v1061.js'));
           assert(manifest.display==='standalone' && !!manifest.id);
