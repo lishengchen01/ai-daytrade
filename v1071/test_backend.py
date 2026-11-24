@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from .scanner import scan_real
-from .push_service import create_app, _is_apple_endpoint, deliver
-from .create_vapid_keys import generate
+from v1071.scanner import scan_real
+from v1071.push_service import create_app, _is_apple_endpoint, deliver
+from v1071.create_vapid_keys import generate
 
 TW = ZoneInfo("Asia/Taipei")
 
