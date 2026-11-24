@@ -112,9 +112,10 @@ class SignalTests(unittest.TestCase):
     def test_fugle_path_without_real_network(self):
         captured = []
         f = FugleClient(key="TEST-ONLY", transport=lambda path: captured.append(path) or {})
+        f.ticker("6148")
         f.quote("6148")
         f.minute_candles("6148")
-        self.assertEqual(captured, ["intraday/quote/6148",
+        self.assertEqual(captured, ["intraday/ticker/6148", "intraday/quote/6148",
                                    "intraday/candles/6148?timeframe=1&sort=asc"])
 
 
