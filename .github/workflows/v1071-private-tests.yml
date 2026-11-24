@@ -1,0 +1,43 @@
+name: V1.07.1 private push and real-signal regression
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'v1071/**'
+      - 'push-v1071.js'
+      - 'sw.js'
+      - 'index.html'
+      - '.github/workflows/v1071-private-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install private server test dependencies
+        run: python -m pip install -r v1071/requirements.txt
+      - name: Python regression without real Fugle keys
+        run: python -m unittest discover -s v1071 -p 'test_*.py' -v
+      - name: PWA syntax and private-only guarantees
+        run: |
+          node --check push-v1071.js
+          node --check sw.js
+          node --check notifier-v1061.js
+          node - <<'NODE'
+          const fs=require('fs'),assert=require('node:assert');
+          const html=fs.readFileSync('index.html','utf8'),sw=fs.readFileSync('sw.js','utf8');
+          const deploy=fs.readFileSync('.github/workflows/quotes.yml','utf8');
+          for(const id of ['push1071url','push1071pair','push1071subscribe','push1071test','push1071status'])assert(html.includes(id));
+          assert(html.includes('push-v1071.js'));
+          assert(sw.includes('strategy-signal')&&sw.includes('connection-test'));
+          assert(deploy.includes('push-v1071.js'));
+          assert(!html.includes('FUGLE_API_KEY'));
+          console.log('PASS mobile notification prerequisites');
+          NODE
