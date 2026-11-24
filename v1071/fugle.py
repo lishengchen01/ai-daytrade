@@ -38,13 +38,19 @@ class FugleClient:
 
     @staticmethod
     def _symbol(symbol):
-        if not re.fullmatch(r"[0-9]{4,6}[A-Z]?", symbol):
+        if not re.fullmatch(r"(?:[0-9]{4,6}[A-Z]?|IX[0-9]{4,6})", symbol):
             raise MarketDataError("股票代碼不合法")
         return symbol
 
     def ticker(self, symbol):
         """Fugle trading eligibility/industry flags. Must also verify broker permissions."""
         return self.transport("intraday/ticker/" + self._symbol(symbol))
+
+    def tickers(self, *, industry, exchange="TWSE"):
+        if not re.fullmatch(r"[0-9]{2}", industry):
+            raise MarketDataError("invalid industry")
+        return self.transport("intraday/tickers?type=EQUITY&exchange="
+                              + exchange + "&industry=" + industry + "&isNormal=true")
 
     def quote(self, symbol):
         return self.transport("intraday/quote/" + self._symbol(symbol))
