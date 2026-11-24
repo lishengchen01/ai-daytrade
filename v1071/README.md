@@ -66,14 +66,18 @@ WEBPUSH_DERIVED_SIGNAL_ALLOWED = YES（僅在確認衍生推播授權後）
 私人伺服器由反向代理提供 **公開可由 iPhone 存取的 HTTPS**，並轉送到本機 `127.0.0.1:8787`；不要把本機 HTTP 直接暴露到網際網路：
 
 ```cmd
-py -m waitress --listen=127.0.0.1:8787 --call v1071.push_service:create_app
+py -m v1071.start_windows
 ```
 
-若本機 waitress 不接受以上 CLI，建議用：
+**給 Windows 使用者的簡易啟動程式**：會自動產生不外傳的 VAPID 私鑰及高強度私人手機配對碼，存在 `%USERPROFILE%\.ai-daytrade-private\`，提示輸入自己的聯絡 Email，再於本機 `127.0.0.1:8787` 啟動服務。**不會要求 Fugle 金鑰，也不會自動打開正式行情推播**。請先用這個功能驗證真正遠端推播。
+
+進階手動啟動可用：
 
 ```cmd
-waitress-serve --listen=127.0.0.1:8787 --call v1071.push_service:create_app
+py -m v1071.serve
 ```
+
+手動啟動時，需要自行在私人環境變數配置前述 VAPID 和配對資料。
 
 **在另一個已設定 Fugle 個人金鑰與私人 config 的命令視窗**：
 
@@ -97,3 +101,23 @@ py -m v1071.scan_loop
 - Fugle https://developer.fugle.tw/docs/data/http-api/intraday/tickers/
 - Fugle https://developer.fugle.tw/docs/pricing/
 - Apple/WebKit https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
+
+## 免費優先的 Windows → iPhone HTTPS 測試路線（可選）
+
+Tailscale Personal 提供免費方案，而 **Funnel** 可以在符合帳號/裝置條件時提供 `*.ts.net` HTTPS 網址，不必先購買自己的網域。**Funnel 是公開網路入口，不等於私人驗證**；所以本程式仍要求至少 32 字元的私人配對碼、同源限制，且只接受 Apple Web Push 訂閱端點。
+
+1. 先安裝 Tailscale（https://tailscale.com/download），登入個人帳號；Windows 使用系統管理員權限執行 Funnel。
+2. 保持 `py -m v1071.start_windows` 的 CMD 視窗執行中。
+3. 在另一個系統管理員 CMD 輸入：
+
+```cmd
+tailscale funnel 8787
+```
+
+4. 依畫面核准開啟 HTTPS 與 Funnel，取得 `https://你的裝置.你的網路.ts.net/`。不要把本機 `http://127.0.0.1:8787` 當成手機可用網址。
+5. iPhone 主畫面打開 **V1.07.1**，輸入上面的 HTTPS URL，再從本機私人檔案 `pairing-token.txt` 查看**私人配對碼（非 Fugle Key）**，點「訂閱私人遠端通知」→「發送遠端測試推播」。
+6. 遠端測試成功後，才規劃真正行情掃描的授權確認、券商資格核實及 `scan_loop` 常駐。
+
+**注意**：iPhone 訂閱是屬於**正式 GitHub Pages 來源**的 Service Worker，尚未合併部署本 PR 時，手機上看不到新按鈕；不要因為本機伺服器已啟動就宣稱手機推播已上線。Funnel 的開放會把後端入口暴露在公開網路，請保護本機資料與配對碼，也請按服務商條款評估是否適合長期運行。
+
+官方說明：https://tailscale.com/docs/features/tailscale-funnel 、https://tailscale.com/pricing
