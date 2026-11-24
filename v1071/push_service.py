@@ -2,6 +2,7 @@
 No Fugle API key or quotes are served to browser. No auto-order endpoints.
 """
 from datetime import datetime, timezone
+from contextlib import closing
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -113,7 +114,7 @@ def create_app():
         sub = _valid_sub(request.get_json(silent=True))
         if not sub:
             return jsonify(error="invalid_apple_subscription"), 400
-        with connect_db() as db:
+        with closing(connect_db()) as db, db:
             count = db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
             exists = db.execute("SELECT 1 FROM subscriptions WHERE endpoint=?", (sub[0],)).fetchone()
             if count >= 5 and not exists:
@@ -130,7 +131,7 @@ def create_app():
         sub = _valid_sub(payload)
         if not sub:
             return jsonify(error="invalid_apple_subscription"), 400
-        with connect_db() as db:
+        with closing(connect_db()) as db, db:
             db.execute("DELETE FROM subscriptions WHERE endpoint=?", (sub[0],))
         return jsonify(registered=False)
 
@@ -175,7 +176,7 @@ def deliver(payload, *, allow_test=False):
     if not key_path.is_file():
         return 0
     serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    with connect_db() as db:
+    with closing(connect_db()) as db, db:
         if not test:
             previously = db.execute("SELECT 1 FROM sent WHERE signal_id=?",
                                     (payload["signalId"],)).fetchone()
