@@ -1,10 +1,14 @@
+
 name: Public daily quotes
+
 on:
   workflow_dispatch:
   schedule:
     - cron: '30 8 * * 1-5'
-permissions:D
+
+permissions:
   contents: read
+
 jobs:
   quotes:
     runs-on: ubuntu-latest
@@ -12,11 +16,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: python fetch_quotes.py
       - run: |
-          mkdir site
+          mkdir -p site
           cp index.html extra.js dashboard.js monitor.js manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
   deploy:
     needs: quotes
     permissions:
