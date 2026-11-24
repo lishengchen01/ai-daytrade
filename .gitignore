@@ -1,0 +1,13 @@
+# NEVER commit credentials, private stock feeds, Apple subscriptions, or push secrets
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.pem
+*.key
+private-config.json
+private-signals*.json
+__pycache__/
+*.pyc
