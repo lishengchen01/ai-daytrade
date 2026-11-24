@@ -96,6 +96,19 @@ class SignalTests(unittest.TestCase):
                           "change": 0.5, "volume": 5000}]}
         self.assertEqual(len(watchlist(data, "2026-11-25")), 1)
 
+    def test_short_conditions_require_sell_then_buy(self):
+        def flip(x): return 200 - x
+        for bar in self.c["data"]:
+            o,h,l,c = (bar[k] for k in ("open","high","low","close"))
+            bar.update(open=flip(o), high=flip(l), low=flip(h), close=flip(c))
+        self.q["closePrice"] = 95.6
+        self.q["avgPrice"] = 96.5
+        self.ctx["market_direction"] = -1
+        self.ctx["sector_directions"]["6148"] = -1
+        self.assertEqual(self.run_evaluation()["direction"], "SHORT_CONDITIONS")
+        self.ctx["eligibility"]["6148"]["sell_then_buy"] = False
+        self.assertEqual(self.run_evaluation()["direction"], "WAIT")
+
     def test_fugle_path_without_real_network(self):
         captured = []
         f = FugleClient(key="TEST-ONLY", transport=lambda path: captured.append(path) or {})
