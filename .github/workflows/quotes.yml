@@ -17,7 +17,7 @@ jobs:
       - run: python fetch_quotes.py
       - run: |
           mkdir -p site
-          cp index.html extra.js dashboard.js monitor.js manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
+          cp index.html extra.js dashboard.js monitor.js intraday-v106.js intraday.json manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
