@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import (
     Encoding, PrivateFormat, NoEncryption,
 )
-from .push_background import prepare_environment
+from v1071.push_background import prepare_environment
 
 
 class PrivateBackgroundTests(unittest.TestCase):
