@@ -1,0 +1,43 @@
+name: Deploy PWA interface updates
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "push-v1071.js"
+      - "sw.js"
+      - "notifier-v1061.js"
+      - "manifest.webmanifest"
+      - ".github/workflows/deploy-ui.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-interface-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble existing static PWA without refreshing or publishing private quotes
+        run: |
+          mkdir -p site
+          cp index.html extra.js dashboard.js monitor.js intraday-v106.js notifier-v1061.js push-v1071.js intraday.json manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
+          grep -q 'id="push1073persistStatus"' site/index.html
+          grep -q 'daytrade-v1073-1' site/sw.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/deploy-pages@v4
