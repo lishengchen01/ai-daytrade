@@ -83,6 +83,31 @@ async function run() {
   await bad.els.push1071test.onclick();
   assert.equal(failed.has(STORAGE_KEY), false, "server that sent zero pushes never stores token");
 
+  // Regression: iPhone had existing push subscription, but V1.07.3
+  // had no legacy saved URL when user only tapped Remote Test.
+  const noLegacyUrl = new Map();
+  const first = load(noLegacyUrl);
+  first.els.push1071url.value = base;
+  first.els.push1071pair.value = token;
+  first.els.push1073remember.checked = true;
+  await first.els.push1071test.onclick();
+  assert.equal(noLegacyUrl.get("private-push-service-v1071"), base,
+    "remote test must persist the URL required for reopening");
+  assert.match(first.els.push1073persistStatus.textContent, /成功讀回/,
+    "visible diagnostics must confirm the stored value was read back");
+  const reopened = load(noLegacyUrl);
+  assert.equal(reopened.els.push1071url.value, base);
+  assert.equal(reopened.els.push1071pair.value, token);
+  assert.equal(reopened.els.push1073remember.checked, true);
+  assert.match(reopened.els.push1073persistStatus.textContent, /已從此裝置恢復/);
+
+  // Recovery if legacy URL key was cleared but the bound token remained.
+  noLegacyUrl.delete("private-push-service-v1071");
+  const recovered = load(noLegacyUrl);
+  assert.equal(recovered.els.push1071url.value, base);
+  assert.equal(recovered.els.push1071pair.value, token);
+  assert.equal(recovered.els.push1073remember.checked, true);
+
   const noOptIn = new Map([["private-push-service-v1071", base]]);
   const b = load(noOptIn);
   b.els.push1071pair.value = token;
@@ -98,7 +123,7 @@ async function run() {
   c.els.push1071url.listeners.change();
   assert.equal(c.els.push1071pair.value, "", "saved pairing token not reused with another server");
   assert.equal(otherUrl.has(STORAGE_KEY), false);
-  console.log("PASS: opt-in, reopen, opt-out, forget, remote test failure, URL mismatch");
+  console.log("PASS: save on test, readback diagnostics, reopen, missing legacy URL recovery, opt-out, forget, auth failure, URL mismatch");
 }
 
 run().catch(e=>{console.error(e);process.exitCode=1;});
