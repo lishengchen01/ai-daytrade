@@ -1,0 +1,30 @@
+name: V1.07.3 Remember private iPhone pairing
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "push-v1071.js"
+      - "sw.js"
+      - "tests/test_remember_pairing.cjs"
+      - ".github/workflows/remember-pairing-ci.yml"
+  workflow_dispatch:
+jobs:
+  remember-pairing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check push-v1071.js
+          node --check sw.js
+          node --check tests/test_remember_pairing.cjs
+      - name: Test opt-in, persistent reopen and security
+        run: node tests/test_remember_pairing.cjs
+      - name: Assert public page never contains a server key
+        run: |
+          grep -q 'id="push1073remember"' index.html
+          grep -q 'id="push1073forget"' index.html
+          grep -q "daytrade-v1073" sw.js
