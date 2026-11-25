@@ -12,46 +12,77 @@
   if (![urlField, pairField, subButton, testButton, unsubscribeButton, status,
         rememberField, forgetButton].every(Boolean)) return;
   const PAIR_STORAGE_KEY = "private-push-pairing-v1073";
+  const URL_STORAGE_KEY = "private-push-service-v1071";
+  const persistStatus = el("push1073persistStatus");
   const say = msg => { status.textContent = msg; };
+  const showSaveStatus = msg => {
+    if (persistStatus) persistStatus.textContent = "本機保存狀態：" + msg;
+  };
   const getRemembered = () => {
     try {
       const obj = JSON.parse(localStorage.getItem(PAIR_STORAGE_KEY) || "null");
       if (obj && typeof obj.base === "string" &&
           /^https:\/\/[^/]+$/.test(obj.base) && typeof obj.token === "string" &&
           obj.token.length >= 32 && obj.token.length <= 512) return obj;
-    } catch (_) { /* storage unavailable or cleared: require manual entry */ }
+    } catch (_) { /* no secret or error details are shown to user */ }
     return null;
   };
   const clearRemembered = (clearInput = false) => {
-    try { localStorage.removeItem(PAIR_STORAGE_KEY); } catch (_) { /* storage blocked */ }
+    try { localStorage.removeItem(PAIR_STORAGE_KEY); } catch (_) {}
     rememberField.checked = false;
     if (clearInput) pairField.value = "";
+    showSaveStatus("未保存（已清除本機配對碼）");
   };
   let priorUrl = "";
-  try { priorUrl = localStorage.getItem("private-push-service-v1071") || ""; }
-  catch (_) { /* URL can be entered manually */ }
-  urlField.value = priorUrl;
+  let urlReadBlocked = false;
+  try { priorUrl = localStorage.getItem(URL_STORAGE_KEY) || ""; }
+  catch (_) { urlReadBlocked = true; }
   const remembered = getRemembered();
-  if (remembered && priorUrl && (() => {
-    try { return new URL(priorUrl).origin === remembered.base; }
+  // V1.07.3 bug: previously only the Subscribe path saved URL. A successful
+  // Test request could save the token while priorUrl was empty, preventing
+  // restoration on reopen. Recover from the server origin bound to the token.
+  urlField.value = priorUrl || (remembered ? remembered.base : "");
+  const sameOrigin = () => {
+    try { return !!remembered && new URL(urlField.value).origin === remembered.base; }
     catch (_) { return false; }
-  })()) {
+  };
+  if (remembered && sameOrigin()) {
     pairField.value = remembered.token;
     rememberField.checked = true;
+    showSaveStatus("已從此裝置恢復，無需重新輸入配對碼");
+  } else if (remembered) {
+    showSaveStatus("有保存資料，但伺服器網址不同；請確認網址後重新驗證");
+  } else if (urlReadBlocked) {
+    showSaveStatus("無法存取網站儲存空間，請確認目前不是私人瀏覽");
+  } else {
+    showSaveStatus("尚未保存配對碼，勾選後需成功完成遠端測試");
   }
   const rememberAfterSuccess = cfg => {
     if (!rememberField.checked) { clearRemembered(false); return true; }
-    // Pairing token is saved ONLY after the private server accepted an authenticated call.
-    // This is a local browser opt-in, not iOS Keychain; never send this value to GitHub.
+    // Store the URL and its authenticated token together and verify both
+    // read back correctly. Never log or show any part of the bearer token.
     try {
+      localStorage.setItem(URL_STORAGE_KEY, cfg.base);
       localStorage.setItem(PAIR_STORAGE_KEY, JSON.stringify({base:cfg.base, token:cfg.token}));
+      const confirmed = getRemembered();
+      const confirmedUrl = localStorage.getItem(URL_STORAGE_KEY);
+      const ok = !!confirmed && confirmed.base === cfg.base &&
+        confirmed.token === cfg.token && confirmedUrl === cfg.base;
+      if (!ok) throw new Error("storage_readback_failed");
+      showSaveStatus("已保存並成功讀回（可關閉 APP 再開測試）");
       return true;
-    } catch (_) { return false; }
+    } catch (_) {
+      try { localStorage.removeItem(PAIR_STORAGE_KEY); } catch (_) {}
+      showSaveStatus("儲存或讀回失敗，請檢查此 iPhone 的網站儲存權限");
+      return false;
+    }
   };
   rememberField.addEventListener("change", () => {
     if (!rememberField.checked) {
       clearRemembered(false);
       say("已關閉記住配對碼；本次開啟期間仍可使用，重開 APP 後須重新輸入。");
+    } else {
+      showSaveStatus("已勾選，請按「發送遠端測試推播」完成驗證後保存");
     }
   });
   forgetButton.onclick = () => {
