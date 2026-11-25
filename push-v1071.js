@@ -7,10 +7,67 @@
   const el = id => document.getElementById(id);
   const urlField = el("push1071url"), pairField = el("push1071pair"),
     subButton = el("push1071subscribe"), testButton = el("push1071test"),
-    unsubscribeButton = el("push1071unsubscribe"), status = el("push1071status");
-  if (![urlField, pairField, subButton, testButton, unsubscribeButton, status].every(Boolean)) return;
-  urlField.value = localStorage.getItem("private-push-service-v1071") || "";
+    unsubscribeButton = el("push1071unsubscribe"), status = el("push1071status"),
+    rememberField = el("push1073remember"), forgetButton = el("push1073forget");
+  if (![urlField, pairField, subButton, testButton, unsubscribeButton, status,
+        rememberField, forgetButton].every(Boolean)) return;
+  const PAIR_STORAGE_KEY = "private-push-pairing-v1073";
   const say = msg => { status.textContent = msg; };
+  const getRemembered = () => {
+    try {
+      const obj = JSON.parse(localStorage.getItem(PAIR_STORAGE_KEY) || "null");
+      if (obj && typeof obj.base === "string" &&
+          /^https:\/\/[^/]+$/.test(obj.base) && typeof obj.token === "string" &&
+          obj.token.length >= 32 && obj.token.length <= 512) return obj;
+    } catch (_) { /* storage unavailable or cleared: require manual entry */ }
+    return null;
+  };
+  const clearRemembered = (clearInput = false) => {
+    try { localStorage.removeItem(PAIR_STORAGE_KEY); } catch (_) { /* storage blocked */ }
+    rememberField.checked = false;
+    if (clearInput) pairField.value = "";
+  };
+  let priorUrl = "";
+  try { priorUrl = localStorage.getItem("private-push-service-v1071") || ""; }
+  catch (_) { /* URL can be entered manually */ }
+  urlField.value = priorUrl;
+  const remembered = getRemembered();
+  if (remembered && priorUrl && (() => {
+    try { return new URL(priorUrl).origin === remembered.base; }
+    catch (_) { return false; }
+  })()) {
+    pairField.value = remembered.token;
+    rememberField.checked = true;
+  }
+  const rememberAfterSuccess = cfg => {
+    if (!rememberField.checked) { clearRemembered(false); return true; }
+    // Pairing token is saved ONLY after the private server accepted an authenticated call.
+    // This is a local browser opt-in, not iOS Keychain; never send this value to GitHub.
+    try {
+      localStorage.setItem(PAIR_STORAGE_KEY, JSON.stringify({base:cfg.base, token:cfg.token}));
+      return true;
+    } catch (_) { return false; }
+  };
+  rememberField.addEventListener("change", () => {
+    if (!rememberField.checked) {
+      clearRemembered(false);
+      say("已關閉記住配對碼；本次開啟期間仍可使用，重開 APP 後須重新輸入。");
+    }
+  });
+  forgetButton.onclick = () => {
+    clearRemembered(true);
+    say("已忘記這台裝置的配對碼。現有 iPhone 推播訂閱不受影響。");
+  };
+  urlField.addEventListener("change", () => {
+    const stored = getRemembered();
+    if (!stored) return;
+    try {
+      if (new URL(urlField.value.trim()).origin === stored.base) return;
+    } catch (_) { /* invalid URL also invalidates remembered credential */ }
+    if (pairField.value.trim() === stored.token) pairField.value = "";
+    clearRemembered(false);
+    say("伺服器網址已變更，請重新輸入該伺服器的私人配對碼。");
+  });
   const homeScreen = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
   const supported = () => location.protocol === "https:" && "Notification" in window &&
     "serviceWorker" in navigator && "PushManager" in window;
@@ -73,8 +130,11 @@
         userVisibleOnly: true, applicationServerKey: toBytes(key.publicKey)
       });
       await api(cfg, "/api/v1/subscribe", sub.toJSON());
-      localStorage.setItem("private-push-service-v1071", cfg.base);
-      say("遠端 Web Push 訂閱成功。現在可測試從伺服器推播；真實行情訊號仍須伺服器完成授權及全部策略驗證。");
+      try { localStorage.setItem("private-push-service-v1071", cfg.base); } catch (_) {}
+      const saved = rememberAfterSuccess(cfg);
+      say("遠端 Web Push 訂閱成功。" +
+        (rememberField.checked ? (saved ? " 已記住此裝置配對碼。" : " 無法儲存配對碼，請檢查瀏覽器儲存權限。") : "") +
+        " 現在可測試從伺服器推播；真實行情訊號仍須伺服器完成授權及全部策略驗證。");
     } catch (err) {
       say("訂閱失敗：" + String(err.message || err).slice(0, 240));
     } finally {subButton.disabled = false;}
@@ -85,7 +145,10 @@
     try {
       const cfg = config();
       const res = await api(cfg, "/api/v1/test", {});
-      say(res.sent > 0 ? "私人伺服器已送出遠端測試推播。請檢查 iPhone 通知中心。" :
+      const saved = res.sent > 0 ? rememberAfterSuccess(cfg) : true;
+      say(res.sent > 0 ?
+        ("私人伺服器已送出遠端測試推播。請檢查 iPhone 通知中心。" +
+         (rememberField.checked ? (saved ? " 已記住此裝置配對碼。" : " 無法儲存配對碼。") : "")) :
         "沒有送出推播：請先完成遠端訂閱及檢查私人伺服器的 VAPID 金鑰。");
     } catch (err) {say("遠端測試失敗：" + String(err.message || err).slice(0, 240));}
     finally {testButton.disabled = false;}
@@ -99,7 +162,8 @@
       if (!sub) {say("此裝置尚未訂閱。");return;}
       await api(cfg, "/api/v1/unsubscribe", sub.toJSON());
       await sub.unsubscribe();
-      say("已取消此手機的私人推播訂閱。");
+      clearRemembered(true);
+      say("已取消此手機的私人推播訂閱，並清除本裝置儲存的配對碼。");
     } catch(err) {say("取消訂閱失敗：" + String(err.message || err).slice(0, 200));}
     finally {unsubscribeButton.disabled = false;}
   };
