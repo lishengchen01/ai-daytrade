@@ -42,7 +42,7 @@ class LiveAuditSafetyTests(unittest.TestCase):
             self.assertEqual(os.environ["FUGLE_PRIVATE_USE_CONFIRMED"], "NO")
             self.assertEqual(out["signals"], [("2330", "LONG_CONDITIONS")])
             self.assertEqual(out["requests"], 7)
-            self.assertTrue(scan.call_args.kwargs["config"]["broker_sell_first_verified"])
+            self.assertTrue(scan.call_args.args[0]["broker_sell_first_verified"])
         # audit_live intentionally has no imported push_service or deliver function
         from v1071 import audit_live
         self.assertFalse(hasattr(audit_live, "deliver"))
