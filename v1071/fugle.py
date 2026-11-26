@@ -2,6 +2,8 @@
 import json
 import os
 import re
+import time
+from collections import deque
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,14 +15,29 @@ class MarketDataError(RuntimeError):
 
 class FugleClient:
     BASE = "https://api.fugle.tw/marketdata/v1.0/stock/"
+    # Conservative per-process cap below Fugle basic-tier limit of 60/min.
+    REQUEST_LIMIT = 45
+    WINDOW_SECONDS = 60
 
     def __init__(self, key=None, transport=None):
         self.key = key or os.getenv("FUGLE_API_KEY")
         if not self.key:
             raise MarketDataError("FUGLE_API_KEY 未設定；不會執行真實行情請求")
+        self._request_times = deque()
+        self.requests_made = 0
         self.transport = transport or self._http
 
     def _http(self, path):
+        # Fail closed, never sleep or burst past the per-process safety budget.
+        # Each independent client has its own counter; only run one local
+        # API scan process with this key to respect the account-wide quota.
+        now = time.monotonic()
+        while self._request_times and now - self._request_times[0] >= self.WINDOW_SECONDS:
+            self._request_times.popleft()
+        if len(self._request_times) >= self.REQUEST_LIMIT:
+            raise MarketDataError("Fugle REST 安全預算已達上限，停止本次掃描")
+        self._request_times.append(now)
+        self.requests_made += 1
         req = urllib.request.Request(
             urllib.parse.urljoin(self.BASE, path),
             headers={"X-API-KEY": self.key, "Accept": "application/json",
