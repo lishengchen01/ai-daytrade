@@ -8,7 +8,7 @@ A durable SQLite reservation is written BEFORE attempting Apple Web Push:
 this favors at-most-once alert attempts over duplicates after a crash. HTTP
 push provider acceptance is not proof that an iPhone showed a notification.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from datetime import datetime, time
 import json
 import os
@@ -79,7 +79,7 @@ def _reserve_attempt(payload, *, db_path=LOCAL_DB, now=None):
     """
     signal_id = payload["signalId"]
     stamp = (now or datetime.now(TW)).isoformat()
-    with sqlite3.connect(str(db_path), timeout=10) as db:
+    with closing(sqlite3.connect(str(db_path), timeout=10)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         db.execute("""CREATE TABLE IF NOT EXISTS local_dispatch_attempts (
             signal_id TEXT PRIMARY KEY,
@@ -142,7 +142,7 @@ def dispatch_from_private_audit(
         return out
     # Do not reserve signals when there is no genuinely subscribed device.
     try:
-        with sqlite3.connect(str(private_root / "push.sqlite3"), timeout=3) as db:
+        with closing(sqlite3.connect(str(private_root / "push.sqlite3"), timeout=3)) as db, db:
             registered = db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
             if registered < 1:
                 return out
