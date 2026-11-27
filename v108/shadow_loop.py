@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from v1071.audit_live import audit_once
 from v1071.fugle import FugleClient
 from .key_store import load_key, SecretStoreError
+from .signal_bridge import shadow_push_summary
 
 TW = ZoneInfo("Asia/Taipei")
 VERSION = "V1.08-shadow.1"
@@ -59,20 +60,27 @@ def _safe_aggregate(diag):
     }
 
 
-def scan_summary(client, now=None, audit=audit_once):
+def scan_summary(client, now=None, audit=audit_once, clock_source=None):
     now = (now or datetime.now(TW)).astimezone(TW)
     if not is_market_session(now):
         return {"version": VERSION, "checked_at": now.isoformat(),
                 "status": "outside_session", "qualified_count": 0,
                 "requests": 0, "gate_counts": {}}
     result = audit(client, now=now)
+    # The post-network-request clock is injectable for deterministic CI tests.
+    checked_at = (clock_source or (lambda: datetime.now(TW)))().astimezone(TW)
+    # Separate, stricter signal-to-mobile payload preparation is shadow-only.
+    # Raw candidates and prepared payloads are never persisted or delivered.
+    push = shadow_push_summary(
+        result.get("verified_signals", []), now=checked_at)
     return {
-        "version": VERSION,
-        "checked_at": datetime.now(TW).isoformat(),
+        "version": "V1.08.1-shadow",
+        "checked_at": checked_at.isoformat(),
         "status": result.get("status", "unknown"),
         "qualified_count": len(result.get("signals", [])),
         "requests": result.get("requests"),
         "gate_counts": _safe_aggregate(result.get("diagnostics")),
+        **push,
     }
 
 

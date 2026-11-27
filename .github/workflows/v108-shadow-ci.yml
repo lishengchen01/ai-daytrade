@@ -20,7 +20,7 @@ jobs:
       - name: Syntax check
         run: python -m compileall -q v108
       - name: Private shadow offline unit tests
-        run: python -m unittest v108.test_shadow v1071.test_backend v1071.test_audit_live -v
+        run: python -m unittest v108.test_shadow v108.test_signal_bridge v1071.test_backend v1071.test_audit_live -v
       - name: Ensure shadow mode does not import real push or scan_loop
         shell: pwsh
         run: |
