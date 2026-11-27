@@ -86,17 +86,10 @@ class PushReadinessTests(unittest.TestCase):
                 "verified_signals": [self.signal],
                 "diagnostics": {"盤後初篩候選數": 5},
             }
-        # scan_summary checks current time for freshness; use a fresh
-        # generated real instant, and override the fixture signal timestamp.
-        instant = datetime.now(TW)
-        if not (instant.weekday() < 5 and
-                9 <= instant.hour <= 13):
-            # Depend on an injected wrapper instead of network/time-bound
-            # fixtures; assertions still test safe persistence regardless of
-            # production session.
-            return
-        self.signal["at"] = instant.isoformat()
-        summary = scan_summary(Client(), now=instant, audit=fake_audit)
+        summary = scan_summary(
+            Client(), now=self.now, audit=fake_audit,
+            clock_source=lambda: self.now,
+        )
         self.assertEqual(summary["push_mode"], "SHADOW_DISABLED")
         self.assertEqual(summary["notifications_sent"], 0)
         self.assertEqual(summary["push_ready_count"], 1)
