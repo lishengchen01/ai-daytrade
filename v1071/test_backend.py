@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from v1071.scanner import scan_real
+from v1071.scanner import scan_real, _quote_rejection_reason, _sector_direction, _valid_quote
 from v1071.push_service import create_app, _is_apple_endpoint, deliver
 from v1071.create_vapid_keys import generate
 
@@ -112,6 +112,32 @@ class RealScannerTests(unittest.TestCase):
         self.client.sector_up = False
         rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
         self.assertEqual(rows, [])
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_quote_age_rejection_is_counted_without_changing_decision(self):
+        original = self.client.quote
+        def stale(symbol):
+            q = original(symbol)
+            if symbol == "6148":
+                q["lastTrade"]["time"] -= 200_000_000
+            return q
+        self.client.quote = stale
+        stats = {}
+        rows, _ = scan_real(self.config, client=self.client,
+                            now=self.now, daily=self.daily, diagnostics=stats)
+        self.assertEqual(rows, [])
+        self.assertEqual(stats["個股即時報價不完整或過期"], 1)
+        self.assertEqual(stats["個股報價原因：最後成交已超過90秒"], 1)
+
+    def test_missing_peer_is_categorized_without_quotes_or_symbols(self):
+        ticker = self.client.ticker("6148")
+        stats = {}
+        direction = _sector_direction(self.client, ticker,
+                                      [{"symbol":"6148","volume":10000}],
+                                      self.now, diagnostics=stats)
+        self.assertEqual(direction, 0)
+        self.assertEqual(stats["可比較的前日同產業股票不足兩檔"], 1)
+        self.assertNotIn("6148", str(stats))
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_stale_daily_does_not_alert(self):
