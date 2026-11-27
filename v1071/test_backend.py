@@ -21,7 +21,7 @@ class FakeFugle:
 
     def ticker(self, symbol):
         if symbol == "IX0001":
-            return {"date": self.date, "symbol": symbol, "type": "INDEX"}
+            return {"date": self.date, "symbol": symbol, "type": "INDEX", "exchange": "TWSE"}
         return {"date": self.date, "symbol": symbol, "type": "EQUITY",
                 "exchange": "TWSE", "industry": "24", "securityStatus": "NORMAL",
                 "isDisposition": False, "matchingInterval": 0,
