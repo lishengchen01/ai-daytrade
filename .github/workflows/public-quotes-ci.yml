@@ -1,0 +1,22 @@
+name: Public quotes release safety checks
+on:
+  pull_request:
+    paths:
+      - "fetch_quotes.py"
+      - "tests/test_public_quotes.py"
+      - ".github/workflows/quotes.yml"
+      - ".github/workflows/public-quotes-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  public-quote-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax check
+        run: python -m py_compile fetch_quotes.py tests/test_public_quotes.py
+      - name: Offline validation regressions (no Fugle API calls)
+        run: python -m unittest discover -s tests -p 'test_public_quotes.py' -v

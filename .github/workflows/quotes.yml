@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python fetch_quotes.py
+      - name: Validate public quote parser (offline)
+        run: python -m unittest discover -s tests -p 'test_public_quotes.py' -v
+      - name: Fetch and validate public market quotes
+        run: python fetch_quotes.py
       - run: |
           mkdir -p site
           cp index.html extra.js dashboard.js monitor.js intraday-v106.js notifier-v1061.js push-v1071.js intraday.json manifest.webmanifest sw.js icon-*.png sample.json quotes.json site/
