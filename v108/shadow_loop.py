@@ -60,21 +60,22 @@ def _safe_aggregate(diag):
     }
 
 
-def scan_summary(client, now=None, audit=audit_once):
+def scan_summary(client, now=None, audit=audit_once, clock_source=None):
     now = (now or datetime.now(TW)).astimezone(TW)
     if not is_market_session(now):
         return {"version": VERSION, "checked_at": now.isoformat(),
                 "status": "outside_session", "qualified_count": 0,
                 "requests": 0, "gate_counts": {}}
     result = audit(client, now=now)
+    # The post-network-request clock is injectable for deterministic CI tests.
+    checked_at = (clock_source or (lambda: datetime.now(TW)))().astimezone(TW)
     # Separate, stricter signal-to-mobile payload preparation is shadow-only.
     # Raw candidates and prepared payloads are never persisted or delivered.
-    # Use the post-network-request clock for the 90-second freshness gate.
     push = shadow_push_summary(
-        result.get("verified_signals", []), now=datetime.now(TW))
+        result.get("verified_signals", []), now=checked_at)
     return {
         "version": "V1.08.1-shadow",
-        "checked_at": datetime.now(TW).isoformat(),
+        "checked_at": checked_at.isoformat(),
         "status": result.get("status", "unknown"),
         "qualified_count": len(result.get("signals", [])),
         "requests": result.get("requests"),
