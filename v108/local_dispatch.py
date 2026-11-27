@@ -9,7 +9,7 @@ this favors at-most-once alert attempts over duplicates after a crash. HTTP
 push provider acceptance is not proof that an iPhone showed a notification.
 """
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, time
 import json
 import os
 from pathlib import Path
@@ -17,7 +17,7 @@ import re
 import sqlite3
 
 from v1071.strategy import TW
-from .signal_bridge import prepare_private_push_payloads
+from .signal_bridge import prepare_private_push_payloads, _verified_time, MAX_AGE
 
 PRIVATE_ROOT = Path.home() / ".ai-daytrade-private"
 OPT_IN = PRIVATE_ROOT / "v1082-private-notify.json"
@@ -111,7 +111,7 @@ def _record_provider_acceptance(signal_id, accepted, *, db_path=LOCAL_DB):
 
 def dispatch_from_private_audit(
     audit_result, *, now=None, config_path=OPT_IN, private_root=PRIVATE_ROOT,
-    delivery=None
+    delivery=None, clock_source=None
 ):
     """Return ONLY aggregate metadata; never store individual quote payloads.
 
@@ -149,18 +149,14 @@ def dispatch_from_private_audit(
         delivery = deliver
     with _temporary_private_delivery_environment(cfg, root=private_root):
         for payload in prepared:
-            # Re-evaluate freshness immediately before each notification;
-            # never give old signals a refreshed timestamp.
-            check_at = datetime.now(TW) if now is None else now
-            if not prepare_private_push_payloads(
-                [dict(payload, checks={
-                    name: True for name in (
-                        "gap2to4", "first5m_direction", "close_end_wick20pct",
-                        "first5m_volume10pct", "vwap", "market_and_sector",
-                        "breakout_retest", "daytrade_qualification",
-                        "private_license_acknowledged",
-                    )
-                })], now=check_at):
+            # Verify again using a fresh wall clock AFTER the full scan;
+            # never refresh the underlying issuedAt to bypass 90s expiry.
+            check_at = (clock_source or (lambda: datetime.now(TW)))().astimezone(TW)
+            issued = _verified_time(payload.get("issuedAt"))
+            if (issued is None or issued.date() != check_at.date()
+                or check_at.weekday() >= 5
+                or not time(9, 7) <= check_at.time() <= time(13, 20)
+                or issued > check_at or check_at - issued > MAX_AGE):
                 continue
             if not _reserve_attempt(
                 payload, db_path=private_root / "push.sqlite3", now=check_at
