@@ -123,9 +123,14 @@ def _candidate_rows(daily, today):
     if not rows:
         return [], []
     latest = max(r["date"] for r in rows)
-    # Avoid selecting from stale prior sessions or fake snapshot dates.
-    if (datetime.fromisoformat(today).date() -
-        datetime.fromisoformat(latest).date()).days > 4:
+    # Stronger live-signal safety: never use Thursday's candidate snapshot
+    # on a normal Monday if the Friday official close failed to publish.
+    # Without an independently verified exchange holiday calendar, block
+    # on special holidays rather than silently using an older session.
+    expected = datetime.fromisoformat(today).date() - timedelta(days=1)
+    while expected.weekday() >= 5:
+        expected -= timedelta(days=1)
+    if latest != expected.isoformat():
         return [], []
     prev = [r for r in rows if r["date"] == latest]
     eligible = [r for r in prev if isinstance(r.get("change"), (float, int)) and
