@@ -1,0 +1,20 @@
+name: V1.08.2 owner-only live readiness safe updater
+on:
+  pull_request:
+    paths:
+      - "upgrade-v1082-owner-ready.py"
+      - "tests/test_shadow_upgrade_owner_ready.py"
+      - ".github/workflows/v1082-owner-updater-ci.yml"
+  workflow_dispatch:
+jobs:
+  safe-owner-upgrade:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile updater
+        run: python -m py_compile upgrade-v1082-owner-ready.py tests/test_shadow_upgrade_owner_ready.py
+      - name: Offline no-live-optin, integrity and rollback regressions
+        run: python -m unittest discover -s tests -p 'test_shadow_upgrade_owner_ready.py' -v
