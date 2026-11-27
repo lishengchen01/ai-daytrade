@@ -39,6 +39,39 @@ def _valid_quote(q, symbol, now, expected_type="EQUITY"):
         _finite(q.get(k)) for k in ("previousClose", "closePrice"))
 
 
+def _quote_rejection_reason(q, symbol, now, expected_type="EQUITY"):
+    """Categorize a previously rejected quote without revealing quote contents.
+
+    Diagnostic ONLY; _valid_quote continues to make every trading qualification
+    decision with its existing fail-closed freshness rules.
+    """
+    if not isinstance(q, dict):
+        return "行情結構異常"
+    if q.get("symbol") != symbol or q.get("date") != now.date().isoformat():
+        return "行情代碼或交易日期不符"
+    if q.get("type") != expected_type:
+        return "行情類型不符"
+    if q.get("isTrial") is True or (
+            isinstance(q.get("tradingHalt"), dict) and
+            q["tradingHalt"].get("isHalted")):
+        return "試撮或暫停交易"
+    t = (q.get("lastTrade") or {}).get("time") if expected_type == "EQUITY" else (
+        q.get("closeTime") or q.get("lastUpdated") or (q.get("total") or {}).get("time"))
+    if not _finite(t):
+        return "最後成交時間缺失或無效"
+    try:
+        last = microseconds_to_time(t)
+    except (ValueError, OverflowError, OSError):
+        return "最後成交時間格式錯誤"
+    if now < last:
+        return "行情時間晚於檢查時間"
+    if now - last > timedelta(seconds=90):
+        return "最後成交已超過90秒"
+    if not all(_finite(q.get(k)) for k in ("previousClose", "closePrice")):
+        return "前收盤或最後成交價缺失"
+    return "其他未通過的行情驗證"
+
+
 def _direction(q):
     a, b = q["closePrice"], q["previousClose"]
     return 1 if a > b else -1 if a < b else 0
@@ -94,27 +127,37 @@ def _index_symbol(client, config, today):
     return index
 
 
-def _sector_direction(client, ticker, prev, now):
+def _sector_direction(client, ticker, prev, now, diagnostics=None):
+    def note(key):
+        if diagnostics is not None:
+            diagnostics[key] = diagnostics.get(key, 0) + 1
     industry = ticker.get("industry")
     exchange = ticker.get("exchange")
     if not isinstance(industry, str) or industry == "00" or exchange not in ("TWSE", "TPEx"):
+        note("族群無有效產業別或交易所")
         return 0
     group = client.tickers(industry=industry, exchange=exchange)
     if group.get("date") != now.date().isoformat() or not isinstance(group.get("data"), list):
+        note("同產業清單日期或格式不符")
         return 0
     members = set(r.get("symbol") for r in group["data"] if isinstance(r, dict))
     peers = [r for r in prev if r["symbol"] != ticker["symbol"] and r["symbol"] in members]
     peers.sort(key=lambda x: -x["volume"])
     peers = peers[:2]
     if len(peers) < 2:
+        note("可比較的前日同產業股票不足兩檔")
         return 0
     directions = []
     for r in peers:
         q = client.quote(r["symbol"])
         if not _valid_quote(q, r["symbol"], now):
+            note("同業即時行情未通過驗證")
             return 0
         directions.append(_direction(q))
-    return directions[0] if directions[0] and directions[0] == directions[1] else 0
+    if directions[0] and directions[0] == directions[1]:
+        return directions[0]
+    note("同業漲跌方向不一致或平盤")
+    return 0
 
 
 def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
@@ -159,11 +202,12 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
             # canDayTrade=True denotes bidirectional stock eligibility; broker permission is a separate gate.
             buy_ok = ticker.get("canDayTrade") is True or ticker.get("canBuyDayTrade") is True
             short_ok = ticker.get("canDayTrade") is True and config.get("broker_sell_first_verified") is True
-            peer_dir = _sector_direction(client, ticker, prev, now)
+            peer_dir = _sector_direction(client, ticker, prev, now, diagnostics=diagnostics)
             q = client.quote(symbol)
             bars = client.minute_candles(symbol)
             if not _valid_quote(q, symbol, now):
                 mark("個股即時報價不完整或過期")
+                mark("個股報價原因：" + _quote_rejection_reason(q, symbol, now))
                 continue
             if peer_dir == 0:
                 mark("族群方向未得到驗證")
