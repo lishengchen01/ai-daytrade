@@ -148,8 +148,13 @@ def create_app():
     return app
 
 
-def deliver(payload, *, allow_test=False):
-    """Only send app-owned minimal signal metadata through Apple Web Push."""
+def deliver(payload, *, allow_test=False, only_endpoint_sha256=None):
+    """Only send app-owned minimal signal metadata through Apple Web Push.
+
+    For the owner-only background workflow, enforce the single approved
+    Apple endpoint INSIDE the transaction that fetches subscriptions.
+    Existing connection-test API remains unchanged.
+    """
     test = allow_test and payload.get("type") == "connection-test" and payload.get("test") is True
     if not test:
         if (os.environ.get("WEBPUSH_DERIVED_SIGNAL_ALLOWED") != "YES" or
@@ -183,6 +188,16 @@ def deliver(payload, *, allow_test=False):
             if previously:
                 return 0
         subs = db.execute("SELECT endpoint,p256dh,auth FROM subscriptions").fetchall()
+        if not test and only_endpoint_sha256 is not None:
+            if (not isinstance(only_endpoint_sha256, str) or
+                len(only_endpoint_sha256) != 64 or
+                any(x not in "0123456789abcdef" for x in only_endpoint_sha256) or
+                len(subs) != 1 or
+                not _is_apple_endpoint(subs[0][0]) or
+                not hmac.compare_digest(
+                    hashlib.sha256(subs[0][0].encode("utf-8")).hexdigest(),
+                    only_endpoint_sha256)):
+                return 0
         delivered = 0
         for endpoint, p256dh, auth in subs:
             try:
