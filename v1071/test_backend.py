@@ -124,7 +124,7 @@ class RealScannerTests(unittest.TestCase):
         self.client.quote = stale
         stats = {}
         rows, _ = scan_real(self.config, client=self.client,
-                            now=self.now, daily=self.daily, clock=lambda: self.now, diagnostics=stats, clock=lambda: self.now)
+                            now=self.now, daily=self.daily, clock=lambda: self.now, diagnostics=stats)
         self.assertEqual(rows, [])
         self.assertEqual(stats["個股即時報價不完整或過期"], 1)
         self.assertEqual(stats["個股報價原因：最後成交已超過90秒"], 1)
