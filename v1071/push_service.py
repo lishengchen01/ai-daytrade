@@ -157,6 +157,13 @@ def deliver(payload, *, allow_test=False, only_endpoint_sha256=None):
     """
     test = allow_test and payload.get("type") == "connection-test" and payload.get("test") is True
     if not test:
+        # Never allow unscoped non-test alerts, even if an old process sets
+        # the legacy YES environment flag. Only our owner-bound Windows
+        # dispatcher may supply an approved Apple endpoint fingerprint.
+        if (not isinstance(only_endpoint_sha256, str) or
+            len(only_endpoint_sha256) != 64 or
+            any(x not in "0123456789abcdef" for x in only_endpoint_sha256)):
+            return 0
         if (os.environ.get("WEBPUSH_DERIVED_SIGNAL_ALLOWED") != "YES" or
             payload.get("schema") != "daytrade-push-v1" or
             payload.get("type") != "strategy-signal" or
