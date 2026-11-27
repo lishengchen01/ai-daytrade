@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from v1071.audit_live import audit_once
 from v1071.fugle import FugleClient
 from .key_store import load_key, SecretStoreError
+from .signal_bridge import shadow_push_summary
 
 TW = ZoneInfo("Asia/Taipei")
 VERSION = "V1.08-shadow.1"
@@ -66,13 +67,19 @@ def scan_summary(client, now=None, audit=audit_once):
                 "status": "outside_session", "qualified_count": 0,
                 "requests": 0, "gate_counts": {}}
     result = audit(client, now=now)
+    # Separate, stricter signal-to-mobile payload preparation is shadow-only.
+    # Raw candidates and prepared payloads are never persisted or delivered.
+    # Use the post-network-request clock for the 90-second freshness gate.
+    push = shadow_push_summary(
+        result.get("verified_signals", []), now=datetime.now(TW))
     return {
-        "version": VERSION,
+        "version": "V1.08.1-shadow",
         "checked_at": datetime.now(TW).isoformat(),
         "status": result.get("status", "unknown"),
         "qualified_count": len(result.get("signals", [])),
         "requests": result.get("requests"),
         "gate_counts": _safe_aggregate(result.get("diagnostics")),
+        **push,
     }
 
 
