@@ -1,6 +1,7 @@
 """Offline regressions for V1.08.2 local iPhone connection-test path."""
 from contextlib import closing
 from datetime import datetime, timezone
+import io
 import json
 import os
 from pathlib import Path
@@ -108,7 +109,7 @@ class LocalIPhonePushTest(unittest.TestCase):
         with patch("builtins.input", return_value="NO"), patch(
             "v108.test_local_iphone_push.send_local_connection_test",
             side_effect=AssertionError("must not send")
-        ):
+        ), patch("sys.stdout", io.StringIO()):
             self.assertEqual(main(), 1)
 
 
