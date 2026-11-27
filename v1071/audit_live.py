@@ -40,11 +40,16 @@ def audit_once(client, now=None, daily=None):
             os.environ.pop("FUGLE_PRIVATE_USE_CONFIRMED", None)
         else:
             os.environ["FUGLE_PRIVATE_USE_CONFIRMED"] = prior
+    # The original CLI still prints minimal tuples. The in-memory
+    # verified_signals are for V1.08.1's second, stricter push-readiness
+    # gate; do not serialize them in history or publish them to GitHub.
+    accepted = [s for s in signals
+                if s.get("sample") is False and s.get("checks")
+                and all(s["checks"].values())]
     return {
         "status": "completed",
-        "signals": [(s["symbol"], s["direction"]) for s in signals
-                    if s.get("sample") is False and
-                    s.get("checks") and all(s["checks"].values())],
+        "signals": [(s["symbol"], s["direction"]) for s in accepted],
+        "verified_signals": accepted,
         "reason": reason,
         "requests": getattr(client, "requests_made", None),
         "diagnostics": diagnostics,
