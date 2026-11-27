@@ -21,6 +21,9 @@ def main():
     print("最近檢查時間：", timestamp.astimezone(TW).isoformat())
     print("本次符合策略條件數：", obj.get("qualified_count"))
     print("本次 API 請求數：", obj.get("requests"))
+    print("符合手機推播安全格式數：", obj.get("push_ready_count", 0))
+    print("正式通知實際發送數：", obj.get("notifications_sent", 0))
+    print("手機正式訊號模式：", obj.get("push_mode", "SHADOW_DISABLED"))
     if obj.get("status") == "outside_session":
         print("目前為非掃描時段，無需收到正式多空通知。")
     elif age > 660 or age < -60:
