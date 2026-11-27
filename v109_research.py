@@ -1,17 +1,18 @@
-"""V1.09.0 independent research collector; no orders, market API or push credentials."""
+"""V1.09.1 independent research collector; no orders, market API or push credentials."""
 import argparse
 import csv
 import json
 import os
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from urllib.request import urlopen
 
-VERSION = '1.09.0'
+VERSION = '1.09.1'
 TASK = 'AI-Daytrade-V109-Research'
 BASE_TASK = 'AI-Daytrade-V108-Shadow'
 TW = timezone(timedelta(hours=8))
@@ -148,7 +149,7 @@ def policy_update(local, fetch=True):
 def report(local, private, project, fetch=True):
     local.mkdir(parents=True, exist_ok=True)
     policy, changed, update_state = policy_update(local, fetch)
-    with sqlite3.connect(local / 'research.sqlite3', timeout=15) as db:
+    with closing(sqlite3.connect(local / 'research.sqlite3', timeout=15)) as db, db:
         db.execute('CREATE TABLE IF NOT EXISTS scans (checked_at TEXT PRIMARY KEY, data TEXT NOT NULL)')
         import_history(db, private)
         db.execute('DELETE FROM scans WHERE checked_at < ?', ((now() - timedelta(days=180)).isoformat(),))
@@ -307,7 +308,16 @@ def selftest():
                 raw={'version':'V1.08.2-shadow','checked_at':now().isoformat(),'status':'completed','qualified_count':2,'symbol':'SECRET6148','api_key':'SECRET','gate_counts':{'量能不足':3,'SECRET6148':5}}
                 (private/'shadow-v108-history.jsonl').write_text((json.dumps(raw)+'\n')*2,encoding='utf-8')
                 atomic(private/'shadow-v108-status.json',raw)
-                health=report(local,private,p,fetch=False)
+                connections=[]
+                connect=sqlite3.connect
+                def tracked(*args, **kwargs):
+                    db=connect(*args, **kwargs); connections.append(db); return db
+                with patch.object(sqlite3, 'connect', side_effect=tracked):
+                    health=report(local,private,p,fetch=False)
+                self.assertTrue(connections)
+                for db in connections:
+                    with self.assertRaises(sqlite3.ProgrammingError):
+                        db.execute('SELECT 1')
                 self.assertEqual(read_json(local/'research_summary.json')['scan_records'],1)
                 with patch(__name__+'.drive_root',return_value=cloud): self.assertEqual(sync(local,health),'written_to_local_drive_mount')
                 out=(cloud/'collector_status.json').read_text(encoding='utf-8')
