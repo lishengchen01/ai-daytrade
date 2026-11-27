@@ -140,6 +140,14 @@ def dispatch_from_private_audit(
         return out
     if not (private_root / "push.sqlite3").is_file():
         return out
+    # Do not reserve signals when there is no genuinely subscribed device.
+    try:
+        with sqlite3.connect(str(private_root / "push.sqlite3"), timeout=3) as db:
+            registered = db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
+            if registered < 1:
+                return out
+    except sqlite3.Error:
+        return out
     out["push_mode"] = MODE_LIVE
     if not prepared:
         return out
