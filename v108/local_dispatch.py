@@ -101,7 +101,7 @@ def _reserve_attempt(payload, *, db_path=LOCAL_DB, now=None):
 
 
 def _record_provider_acceptance(signal_id, accepted, *, db_path=LOCAL_DB):
-    with sqlite3.connect(str(db_path), timeout=10) as db:
+    with closing(sqlite3.connect(str(db_path), timeout=10)) as db, db:
         db.execute(
             "UPDATE local_dispatch_attempts SET provider_accepted=? "
             "WHERE signal_id=?",
