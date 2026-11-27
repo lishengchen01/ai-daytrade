@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from v1071.scanner import scan_real, _quote_rejection_reason, _sector_direction, _valid_quote
+from v1071.scanner import scan_real, _quote_rejection_reason, _sector_direction, _valid_quote, _candidate_rows
 from v1071.push_service import create_app, _is_apple_endpoint, deliver
 from v1071.create_vapid_keys import generate
 
@@ -208,6 +208,25 @@ class RealScannerTests(unittest.TestCase):
             clock=lambda: received, diagnostics=diagnostics)
         self.assertEqual(rows, [])
         self.assertEqual(diagnostics["個股報價原因：行情時間晚於檢查時間"], 1)
+
+    def test_previous_weekday_snapshot_is_required_for_live_scanner(self):
+        monday = "2026-11-30"
+        last_thursday = {"rows": [
+            {"date": "2026-11-26", "symbol": "6148",
+             "volume": 10000, "change": 3.0}]}
+        selected, _ = _candidate_rows(last_thursday, monday)
+        self.assertEqual(selected, [])
+        last_friday = {"rows": [
+            {"date": "2026-11-27", "symbol": "6148",
+             "volume": 10000, "change": 3.0}]}
+        selected, _ = _candidate_rows(last_friday, monday)
+        self.assertEqual(len(selected), 1)
+        # Holidays without authoritative calendar may block, never guess.
+        post_holiday = {"rows": [
+            {"date": "2026-11-27", "symbol": "6148",
+             "volume": 10000, "change": 3.0}]}
+        selected, _ = _candidate_rows(post_holiday, "2026-12-01")
+        self.assertEqual(selected, [])
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_stale_daily_does_not_alert(self):
