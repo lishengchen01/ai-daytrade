@@ -17,14 +17,11 @@ class VerifiedIndexTests(unittest.TestCase):
     def test_known_taiex_index_is_selected(self):
         class Client:
             def ticker(self, symbol):
-                self.assertEqual(symbol, "IX0001")
-                return {"symbol": symbol, "type":"INDEX", "exchange":"TWSE",
-                        "date":"2026-11-27"}
-        # Keep the stub minimal; assert outside the stub because it is not a TestCase.
+                return {
+                    "symbol": symbol, "type": "INDEX", "exchange": "TWSE",
+                    "date": "2026-11-27",
+                } if symbol == "IX0001" else {}
         client = Client()
-        client.ticker = lambda symbol: {
-            "symbol":symbol, "type":"INDEX", "exchange":"TWSE", "date":"2026-11-27"
-        } if symbol == "IX0001" else {}
         self.assertEqual(_index_symbol(client, {}, "2026-11-27"), "IX0001")
 
     def test_stale_or_wrong_index_never_passes(self):
