@@ -1,5 +1,6 @@
 """Offline regression: authentic-looking fixtures are test-only, never dispatched to users."""
 import os
+import hashlib
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -297,6 +298,50 @@ class PrivatePushTests(unittest.TestCase):
         with patch.dict(os.environ, {"WEBPUSH_DERIVED_SIGNAL_ALLOWED": "NO"}):
             payload["verified"] = True
             self.assertEqual(deliver(payload), 0)
+
+    def test_real_signal_requires_exact_owner_endpoint_at_final_send(self):
+        # Simulated verified metadata and stub Apple network; NEVER a real
+        # transaction or push. All conditions are checked at final DB read.
+        self.assertEqual(self.app.post(
+            "/api/v1/subscribe", json=self.sub, headers=self.auth
+        ).status_code, 200)
+        fingerprint = hashlib.sha256(
+            self.sub["endpoint"].encode("utf-8")
+        ).hexdigest()
+        pem = self.temp.name + "/stub-only-pem"
+        with open(pem, "w", encoding="utf-8") as stream:
+            stream.write("CI PLACEHOLDER - not a private key")
+        def body(sid):
+            return {
+                "schema": "daytrade-push-v1", "type": "strategy-signal",
+                "verified": True, "sample": False, "symbol": "6148",
+                "direction": "LONG_CONDITIONS", "signalId": sid,
+                "issuedAt": datetime.now(TW).isoformat(),
+            }
+        env = {
+            "WEBPUSH_DERIVED_SIGNAL_ALLOWED": "YES",
+            "VAPID_PRIVATE_KEY_PATH": pem,
+            "VAPID_SUBJECT": "mailto:unit-test@example.org",
+        }
+        with patch.dict(os.environ, env), patch(
+            "pywebpush.webpush", return_value=None
+        ) as send:
+            self.assertEqual(deliver(body("2026-11-27:6148:A")), 0)
+            self.assertEqual(deliver(body("2026-11-27:6148:B"),
+                                     only_endpoint_sha256="0"*64), 0)
+            self.assertEqual(deliver(body("2026-11-27:6148:C"),
+                                     only_endpoint_sha256=fingerprint), 1)
+            self.assertEqual(send.call_count, 1)
+            second = {
+                "endpoint": "https://web.push.apple.com/UNEXPECTED-SECOND",
+                "keys": {"p256dh": "A"*87, "auth": "B"*22},
+            }
+            self.assertEqual(self.app.post(
+                "/api/v1/subscribe", json=second, headers=self.auth
+            ).status_code, 200)
+            self.assertEqual(deliver(body("2026-11-27:6148:D"),
+                                     only_endpoint_sha256=fingerprint), 0)
+            self.assertEqual(send.call_count, 1)
 
     def test_generate_vapid_never_overwrites(self):
         pem = self.temp.name + "/private.pem"
