@@ -83,6 +83,31 @@ class RealScannerTests(unittest.TestCase):
         self.assertNotIn("place_order", rows[0])
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_opt_in_diagnostic_counts_do_not_change_signals(self):
+        baseline, _ = scan_real(self.config, client=self.client,
+                                now=self.now, daily=self.daily)
+        stats = {}
+        observed, _ = scan_real(self.config, client=self.client,
+                                now=self.now, daily=self.daily,
+                                diagnostics=stats)
+        self.assertEqual(observed, baseline)
+        self.assertEqual(stats["盤後初篩候選數"], 1)
+        self.assertEqual(stats["完整多空條件通過"], 1)
+        self.assertNotIn("closePrice", str(stats))
+        self.assertNotIn("6148", str(stats))
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_rejected_candidate_has_aggregated_reason(self):
+        self.client.sector_up = False
+        stats = {}
+        observed, _ = scan_real(self.config, client=self.client,
+                                now=self.now, daily=self.daily,
+                                diagnostics=stats)
+        self.assertEqual(observed, [])
+        self.assertEqual(stats["盤後初篩候選數"], 1)
+        self.assertEqual(stats["五分鐘策略或當沖資格條件未全數通過"], 1)
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_bad_sector_does_not_alert(self):
         self.client.sector_up = False
         rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
