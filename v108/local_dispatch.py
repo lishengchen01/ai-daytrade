@@ -10,6 +10,8 @@ push provider acceptance is not proof that an iPhone showed a notification.
 """
 from contextlib import contextmanager, closing
 from datetime import datetime, time
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -46,7 +48,35 @@ def _config(path=OPT_IN):
     if not (isinstance(subject, str) and
             re.fullmatch(r"mailto:[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", subject)):
         return None
+    # The current SINGLE iPhone subscription must match the owner's
+    # explicitly confirmed device. New/changed subscriptions fail closed.
+    fingerprint = cfg.get("device_sha256")
+    if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        return None
     return cfg
+
+
+def owner_device_matches(root, fingerprint):
+    """Read-only fingerprint verification. Never record or export endpoint."""
+    if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        return False
+    database = Path(root) / "push.sqlite3"
+    if not database.is_file():
+        return False
+    try:
+        uri = database.resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True, timeout=3)) as db:
+            rows = db.execute("SELECT endpoint FROM subscriptions LIMIT 2").fetchall()
+        if len(rows) != 1 or not isinstance(rows[0][0], str):
+            return False
+        # Server's own strict Apple host allowlist. No HTTP request here.
+        from v1071.push_service import _is_apple_endpoint
+        endpoint = rows[0][0]
+        return (_is_apple_endpoint(endpoint) and
+                hmac.compare_digest(hashlib.sha256(endpoint.encode("utf-8")).hexdigest(),
+                                    fingerprint))
+    except (sqlite3.Error, ValueError, OSError):
+        return False
 
 
 @contextmanager
@@ -140,21 +170,20 @@ def dispatch_from_private_audit(
         return out
     if not (private_root / "push.sqlite3").is_file():
         return out
-    # Do not reserve signals when there is no genuinely subscribed device.
-    try:
-        with closing(sqlite3.connect(str(private_root / "push.sqlite3"), timeout=3)) as db, db:
-            registered = db.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
-            if registered < 1:
-                return out
-    except sqlite3.Error:
+    # Exactly ONE unchanged Apple subscription: only the personally
+    # verified iPhone. Fail closed if anyone registers a second device.
+    if not owner_device_matches(private_root, cfg["device_sha256"]):
         return out
     out["push_mode"] = MODE_LIVE
     if not prepared:
         return out
     if delivery is None:
-        # Imported ONLY once local opt-in and prerequisites are satisfied.
+        # Use the verified single-iPhone fingerprint ALSO at final delivery:
+        # backend must reject changed/additional rows read from SQLite.
         from v1071.push_service import deliver
-        delivery = deliver
+        delivery = lambda payload: deliver(
+            payload, only_endpoint_sha256=cfg["device_sha256"]
+        )
     with _temporary_private_delivery_environment(cfg, root=private_root):
         for payload in prepared:
             # Verify again using a fresh wall clock AFTER the full scan;
@@ -166,6 +195,13 @@ def dispatch_from_private_audit(
                 or not time(9, 7) <= check_at.time() <= time(13, 20)
                 or issued > check_at or check_at - issued > MAX_AGE):
                 continue
+            # Re-check opt-in and same sole device immediately before each
+            # reservation; never send after an obvious revocation or change.
+            current_cfg = _config(config_path)
+            if (current_cfg is None or
+                current_cfg["device_sha256"] != cfg["device_sha256"] or
+                not owner_device_matches(private_root, cfg["device_sha256"])):
+                break
             if not _reserve_attempt(
                 payload, db_path=private_root / "push.sqlite3", now=check_at
             ):
