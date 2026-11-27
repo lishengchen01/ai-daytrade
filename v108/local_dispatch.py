@@ -178,9 +178,12 @@ def dispatch_from_private_audit(
     if not prepared:
         return out
     if delivery is None:
-        # Imported ONLY once local opt-in and prerequisites are satisfied.
+        # Use the verified single-iPhone fingerprint ALSO at final delivery:
+        # backend must reject changed/additional rows read from SQLite.
         from v1071.push_service import deliver
-        delivery = deliver
+        delivery = lambda payload: deliver(
+            payload, only_endpoint_sha256=cfg["device_sha256"]
+        )
     with _temporary_private_delivery_environment(cfg, root=private_root):
         for payload in prepared:
             # Verify again using a fresh wall clock AFTER the full scan;
