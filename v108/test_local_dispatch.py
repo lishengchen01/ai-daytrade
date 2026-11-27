@@ -110,7 +110,7 @@ class PrivateDispatchTests(unittest.TestCase):
         self.assertEqual(len(delivered), 1)
         self.assertEqual(
             delivered[0]["signalId"], "2026-11-27:6148:LONG_CONDITIONS")
-        with sqlite3.connect(str(self.root / "push.sqlite3")) as db:
+        with closing(sqlite3.connect(str(self.root / "push.sqlite3"))) as db, db:
             self.assertEqual(db.execute(
                 "SELECT provider_accepted FROM local_dispatch_attempts"
             ).fetchone()[0], 1)
