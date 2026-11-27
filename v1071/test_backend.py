@@ -108,6 +108,36 @@ class RealScannerTests(unittest.TestCase):
         self.assertEqual(stats["五分鐘策略或當沖資格條件未全數通過"], 1)
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_failed_strategy_gates_are_counted_without_triggering_signal(self):
+        self.client.sector_up = False
+        stats = {}
+        selected, _ = scan_real(
+            self.config, client=self.client, now=self.now, daily=self.daily,
+            clock=lambda: self.now, diagnostics=stats,
+        )
+        self.assertEqual(selected, [])
+        self.assertEqual(stats["五分鐘策略或當沖資格條件未全數通過"], 1)
+        self.assertEqual(stats["策略未通過：大盤與族群同方向條件未符合"], 1)
+        self.assertNotIn("6148", str(stats))
+        self.assertNotIn("closePrice", str(stats))
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_strategy_precheck_failure_reports_safe_fixed_reason(self):
+        original = self.client.minute_candles
+        def incomplete(symbol):
+            bars = original(symbol)
+            bars["data"] = bars["data"][1:]  # missing 09:00 candle
+            return bars
+        self.client.minute_candles = incomplete
+        stats = {}
+        selected, _ = scan_real(
+            self.config, client=self.client, now=self.now, daily=self.daily,
+            clock=lambda: self.now, diagnostics=stats,
+        )
+        self.assertEqual(selected, [])
+        self.assertEqual(stats["策略前置：首根五分鐘K尚未完整"], 1)
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_bad_sector_does_not_alert(self):
         self.client.sector_up = False
         rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
