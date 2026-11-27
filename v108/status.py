@@ -22,7 +22,8 @@ def main():
     print("本次符合策略條件數：", obj.get("qualified_count"))
     print("本次 API 請求數：", obj.get("requests"))
     print("符合手機推播安全格式數：", obj.get("push_ready_count", 0))
-    print("正式通知實際發送數：", obj.get("notifications_sent", 0))
+    print("Apple 推播服務接受請求數（非手機送達證明）：", obj.get("notifications_sent", 0))
+    print("本輪嘗試發送的訊號數：", obj.get("attempted_alerts", 0))
     print("手機正式訊號模式：", obj.get("push_mode", "SHADOW_DISABLED"))
     if obj.get("status") == "outside_session":
         print("目前為非掃描時段，無需收到正式多空通知。")
@@ -33,7 +34,11 @@ def main():
     print("本機匿名過濾統計：")
     for label, count in (obj.get("gate_counts") or {}).items():
         print(" -", label, ":", count)
-    print("V1.08 影子模式：不發送任何正式多空推播、不會自動下單。")
+    if obj.get("push_mode") == "LOCAL_PRIVATE_ENABLED":
+        print("已進入本機私人通知模式；服務接受請求不等於手機實際顯示通知。")
+    else:
+        print("仍為影子模式；不發送任何正式多空推播。")
+    print("任何模式都不會自動下單。")
     return 0
 
 
