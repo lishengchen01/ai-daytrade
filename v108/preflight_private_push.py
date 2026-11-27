@@ -3,6 +3,7 @@
 Does NOT enable live notifications, send a test push, reveal secrets,
 contact Fugle, or modify the existing Windows scheduled tasks.
 """
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -23,7 +24,7 @@ def inspect(root=PRIVATE_ROOT, config=OPT_IN):
     if info["push_db_exists"]:
         try:
             uri = (root / "push.sqlite3").resolve().as_uri() + "?mode=ro"
-            with sqlite3.connect(uri, uri=True, timeout=2) as db:
+            with closing(sqlite3.connect(uri, uri=True, timeout=2)) as db, db:
                 info["subscribed_device_count"] = db.execute(
                     "SELECT COUNT(*) FROM subscriptions").fetchone()[0]
         except (sqlite3.Error, ValueError):
