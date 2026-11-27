@@ -15,6 +15,34 @@ TW = ZoneInfo("Asia/Taipei")
 DAILY_URL = "https://lishengchen01.github.io/ai-daytrade/quotes.json"
 REQUIRED = ("date", "symbol")
 
+# User-facing diagnostics ONLY; these are aggregated counts of false boolean
+# gates from the existing evaluate() output. They do not alter decisions.
+STRATEGY_DIAGNOSTIC_NAMES = {
+    "gap2to4": "跳空幅度未達2至4%",
+    "first5m_direction": "首根五分鐘K方向未符合",
+    "close_end_wick20pct": "首根五分鐘K影線超過20%",
+    "first5m_volume10pct": "前五分鐘成交量未達昨日10%",
+    "vwap": "VWAP同方向條件未符合",
+    "market_and_sector": "大盤與族群同方向條件未符合",
+    "breakout_retest": "突破後回踩條件未符合",
+    "daytrade_qualification": "個股現股當沖資格未完整核實",
+    "private_license_acknowledged": "私人授權條件未確認",
+}
+
+# Use an allow-list rather than putting arbitrary third-party error strings
+# into diagnostic logs. These are emitted before evaluate() reaches its gates.
+STRATEGY_PRECHECK_REASONS = {
+    "行情格式錯誤", "合成資料禁止觸發真實訊號",
+    "非台股正常進場時段", "交易日尚未由獨立來源確認",
+    "行情股票或日期不一致", "試撮或暫停交易",
+    "最後成交時間過期／未來", "缺少有效最後成交時間",
+    "缺少昨收、最新成交價或當日成交均價",
+    "前交易日成交量不足", "缺少分鐘K線", "分鐘K線時間重複",
+    "分鐘K線時間或欄位錯誤", "首根五分鐘K尚未完整",
+    "首根五分K振幅／成交量無效",
+}
+
+
 
 def _finite(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v < float("inf")
@@ -245,6 +273,18 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None, clock
                 mark("完整多空條件通過")
             else:
                 mark("五分鐘策略或當沖資格條件未全數通過")
+                checks = outcome.get("checks")
+                if isinstance(checks, dict) and checks:
+                    # Several failed checks can coexist for one stock; the
+                    # totals here must NOT be interpreted as unique stocks.
+                    for key, display_name in STRATEGY_DIAGNOSTIC_NAMES.items():
+                        if checks.get(key) is False:
+                            mark("策略未通過：" + display_name)
+                else:
+                    reason = outcome.get("reason")
+                    label = (reason if reason in STRATEGY_PRECHECK_REASONS
+                             else "策略前置驗證未通過（未分類）")
+                    mark("策略前置：" + label)
         except (KeyError, ValueError, TypeError, RuntimeError):
             mark("資料欄位或行情 API 異常")
             continue   # no incomplete or unverified signal
