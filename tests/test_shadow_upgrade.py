@@ -32,7 +32,7 @@ class UpgradeTests(unittest.TestCase):
     def test_downloaded_code_must_parse_and_have_version_marker(self):
         for name in UP.FILES:
             marker = UP.MARKERS[name]
-            UP.validate_source(name, (marker + " = True\n").encode("utf-8"))
+            UP.validate_source(name, (marker + " = True\n" + ("# padding line\n" * 8)).encode("utf-8"))
             with self.assertRaises(ValueError):
                 UP.validate_source(name, b"bad=\n")
             with self.assertRaises(ValueError):
