@@ -8,8 +8,43 @@ from zoneinfo import ZoneInfo
 
 from v1071.audit_live import audit_once
 from v1071.fugle import FugleClient, MarketDataError
+from v1071.scanner import _index_symbol
 
 TW = ZoneInfo("Asia/Taipei")
+
+
+class VerifiedIndexTests(unittest.TestCase):
+    def test_known_taiex_index_is_selected(self):
+        class Client:
+            def ticker(self, symbol):
+                self.assertEqual(symbol, "IX0001")
+                return {"symbol": symbol, "type":"INDEX", "exchange":"TWSE",
+                        "date":"2026-11-27"}
+        # Keep the stub minimal; assert outside the stub because it is not a TestCase.
+        client = Client()
+        client.ticker = lambda symbol: {
+            "symbol":symbol, "type":"INDEX", "exchange":"TWSE", "date":"2026-11-27"
+        } if symbol == "IX0001" else {}
+        self.assertEqual(_index_symbol(client, {}, "2026-11-27"), "IX0001")
+
+    def test_stale_or_wrong_index_never_passes(self):
+        class Client:
+            def __init__(self, ticker):
+                self.value = ticker
+            def ticker(self, _):
+                return self.value
+        good = {"symbol":"IX0001", "type":"INDEX", "exchange":"TWSE", "date":"2026-11-27"}
+        for field, bad_value in [("date","2026-11-26"), ("type","EQUITY"),
+                                 ("exchange","TPEx"), ("symbol","IX0002")]:
+            item = dict(good)
+            item[field] = bad_value
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, "IX0001"):
+                    _index_symbol(Client(item), {}, "2026-11-27")
+
+    def test_no_alternate_index_without_validation(self):
+        with self.assertRaisesRegex(ValueError, "IX0001"):
+            _index_symbol(None, {"market_index_symbol":"IX9999"}, "2026-11-27")
 
 
 class LiveAuditSafetyTests(unittest.TestCase):
