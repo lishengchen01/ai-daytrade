@@ -2,6 +2,7 @@
 
 No market-data calls and no Apple Push traffic. Delivery is always stubbed.
 """
+from contextlib import closing
 from datetime import datetime, timedelta
 import json
 import os
@@ -49,7 +50,7 @@ class PrivateDispatchTests(unittest.TestCase):
     def _prepare_local_device(self):
         (self.root / "vapid-private.pem").write_text(
             "TEST FILE ONLY - no real key", encoding="utf-8")
-        with sqlite3.connect(str(self.root / "push.sqlite3")) as db:
+        with closing(sqlite3.connect(str(self.root / "push.sqlite3"))) as db, db:
             db.execute("CREATE TABLE subscriptions(endpoint TEXT PRIMARY KEY)")
             db.execute(
                 "INSERT INTO subscriptions(endpoint) VALUES (?)",
