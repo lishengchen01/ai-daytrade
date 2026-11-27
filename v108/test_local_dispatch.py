@@ -4,6 +4,7 @@ No market-data calls and no Apple Push traffic. Delivery is always stubbed.
 """
 from contextlib import closing
 from datetime import datetime, timedelta
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,6 +36,9 @@ class PrivateDispatchTests(unittest.TestCase):
         }
         self.result = {"status": "completed", "verified_signals": [self.signal]}
         self.optin = {
+            "device_sha256": hashlib.sha256(
+                b"https://web.push.apple.com/unit-fixture-only"
+            ).hexdigest(),
             "mode": "private-owner-alerts", "enabled": True,
             "personal_fugle_use_confirmed": True,
             "broker_permission_verified": True,
@@ -158,6 +162,40 @@ class PrivateDispatchTests(unittest.TestCase):
                 delivery=lambda p: self.fail("invalid signal sent"),
             )
             self.assertEqual(out["notifications_sent"], 0)
+
+    def test_second_device_or_swapped_subscription_cannot_receive(self):
+        self._write_config()
+        self._prepare_local_device()
+        with closing(sqlite3.connect(str(self.root / "push.sqlite3"))) as db, db:
+            db.execute("INSERT INTO subscriptions VALUES (?)",
+                       ("https://web.push.apple.com/other-iphone",))
+        result = self._dispatch(
+            delivery=lambda p: self.fail("must refuse added device"))
+        self.assertEqual(result["push_mode"], MODE_DISABLED)
+        self.assertEqual(result["attempted_alerts"], 0)
+        with closing(sqlite3.connect(str(self.root / "push.sqlite3"))) as db, db:
+            db.execute("DELETE FROM subscriptions")
+            db.execute("INSERT INTO subscriptions VALUES (?)",
+                       ("https://web.push.apple.com/replaced-iphone",))
+        result = self._dispatch(
+            delivery=lambda p: self.fail("must refuse swapped device"))
+        self.assertEqual(result["push_mode"], MODE_DISABLED)
+
+    def test_revocation_rechecked_before_attempt(self):
+        self._write_config()
+        self._prepare_local_device()
+        from . import local_dispatch
+        original = local_dispatch.owner_device_matches
+        calls = []
+        def changing_device(*args):
+            calls.append(True)
+            return len(calls) == 1
+        with patch.object(local_dispatch, "owner_device_matches",
+                          side_effect=changing_device):
+            out = self._dispatch(
+                delivery=lambda p: self.fail("revoked before sending"))
+        self.assertEqual(out["push_mode"], MODE_LIVE)
+        self.assertEqual(out["attempted_alerts"], 0)
 
     def test_malformed_config_is_blocked(self):
         self._prepare_local_device()
