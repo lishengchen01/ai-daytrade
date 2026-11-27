@@ -75,7 +75,7 @@ class RealScannerTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_genuine_conditions_generate_research_candidate_only(self):
-        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["direction"], "LONG_CONDITIONS")
         self.assertTrue(all(rows[0]["checks"].values()))
@@ -85,10 +85,10 @@ class RealScannerTests(unittest.TestCase):
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_opt_in_diagnostic_counts_do_not_change_signals(self):
         baseline, _ = scan_real(self.config, client=self.client,
-                                now=self.now, daily=self.daily)
+                                now=self.now, daily=self.daily, clock=lambda: self.now)
         stats = {}
         observed, _ = scan_real(self.config, client=self.client,
-                                now=self.now, daily=self.daily,
+                                now=self.now, daily=self.daily, clock=lambda: self.now,
                                 diagnostics=stats)
         self.assertEqual(observed, baseline)
         self.assertEqual(stats["盤後初篩候選數"], 1)
@@ -101,7 +101,7 @@ class RealScannerTests(unittest.TestCase):
         self.client.sector_up = False
         stats = {}
         observed, _ = scan_real(self.config, client=self.client,
-                                now=self.now, daily=self.daily,
+                                now=self.now, daily=self.daily, clock=lambda: self.now,
                                 diagnostics=stats)
         self.assertEqual(observed, [])
         self.assertEqual(stats["盤後初篩候選數"], 1)
@@ -110,7 +110,7 @@ class RealScannerTests(unittest.TestCase):
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_bad_sector_does_not_alert(self):
         self.client.sector_up = False
-        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
         self.assertEqual(rows, [])
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
@@ -124,7 +124,7 @@ class RealScannerTests(unittest.TestCase):
         self.client.quote = stale
         stats = {}
         rows, _ = scan_real(self.config, client=self.client,
-                            now=self.now, daily=self.daily, diagnostics=stats)
+                            now=self.now, daily=self.daily, clock=lambda: self.now, diagnostics=stats)
         self.assertEqual(rows, [])
         self.assertEqual(stats["個股即時報價不完整或過期"], 1)
         self.assertEqual(stats["個股報價原因：最後成交已超過90秒"], 1)
@@ -140,17 +140,56 @@ class RealScannerTests(unittest.TestCase):
         self.assertNotIn("6148", str(stats))
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_quotes_arriving_after_scan_start_are_not_false_future(self):
+        # This previously failed on real data: 'now' was frozen at
+        # scan start but sequential REST calls delivered new trades.
+        start = self.now
+        received = start + timedelta(seconds=8)
+        original = self.client.quote
+        def new_trade(symbol):
+            q = original(symbol)
+            if symbol != "IX0001":
+                q["lastTrade"]["time"] = int(
+                    (start + timedelta(seconds=3)).timestamp() * 1_000_000)
+            return q
+        self.client.quote = new_trade
+        rows, _ = scan_real(self.config, client=self.client,
+                            now=start, daily=self.daily, clock=lambda: received)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["direction"], "LONG_CONDITIONS")
+        self.assertEqual(rows[0]["at"], received.isoformat())
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
+    def test_truly_future_trade_still_fails_closed(self):
+        start = self.now
+        received = start + timedelta(seconds=8)
+        original = self.client.quote
+        def out_of_order(symbol):
+            q = original(symbol)
+            if symbol == "6148":
+                q["lastTrade"]["time"] = int(
+                    (received + timedelta(seconds=15)).timestamp() * 1_000_000)
+            return q
+        self.client.quote = out_of_order
+        diagnostics = {}
+        rows, _ = scan_real(
+            self.config, client=self.client, now=start, daily=self.daily,
+            clock=lambda: received, diagnostics=diagnostics)
+        self.assertEqual(rows, [])
+        self.assertEqual(diagnostics["個股報價原因：行情時間晚於檢查時間"], 1)
+
+    @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_stale_daily_does_not_alert(self):
         self.daily["rows"][0]["date"] = "2026-11-10"
         self.daily["rows"][1]["date"] = "2026-11-10"
         self.daily["rows"][2]["date"] = "2026-11-10"
-        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
         self.assertEqual(rows, [])
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
     def test_no_personal_broker_permission(self):
         self.config["broker_permission_verified"] = False
-        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
         self.assertEqual(rows, [])
 
     @patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "YES"})
@@ -162,12 +201,12 @@ class RealScannerTests(unittest.TestCase):
                 q["lastTrade"]["time"] -= 200_000_000
             return q
         self.client.quote = stale
-        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+        rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
         self.assertEqual(rows, [])
 
     def test_no_market_data_license_confirmation(self):
         with patch.dict(os.environ, {"FUGLE_PRIVATE_USE_CONFIRMED": "NO"}):
-            rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily)
+            rows, _ = scan_real(self.config, client=self.client, now=self.now, daily=self.daily, clock=lambda: self.now)
             self.assertEqual(rows, [])
 
 

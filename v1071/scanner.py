@@ -127,7 +127,7 @@ def _index_symbol(client, config, today):
     return index
 
 
-def _sector_direction(client, ticker, prev, now, diagnostics=None):
+def _sector_direction(client, ticker, prev, now, diagnostics=None, clock=None):
     def note(key):
         if diagnostics is not None:
             diagnostics[key] = diagnostics.get(key, 0) + 1
@@ -150,7 +150,9 @@ def _sector_direction(client, ticker, prev, now, diagnostics=None):
     directions = []
     for r in peers:
         q = client.quote(r["symbol"])
-        if not _valid_quote(q, r["symbol"], now):
+        # Use receipt-time, not the timestamp frozen at scan start.
+        checked_at = (clock or (lambda: datetime.now(TW)))().astimezone(TW)
+        if not _valid_quote(q, r["symbol"], checked_at):
             note("同業即時行情未通過驗證")
             return 0
         directions.append(_direction(q))
@@ -160,7 +162,7 @@ def _sector_direction(client, ticker, prev, now, diagnostics=None):
     return 0
 
 
-def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
+def scan_real(config, client=None, now=None, daily=None, diagnostics=None, clock=None):
     """Return only research judgments, with optional aggregate rejection counts.
 
     Diagnostics are anonymized counts by gate, not raw quote or per-stock data.
@@ -170,6 +172,10 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0) + amount
     now = (now or datetime.now(TW)).astimezone(TW)
+    # The scan may make dozens of serial API calls. A single start-time
+    # makes later fresh trades look like future data. Use real receipt time
+    # for each response. Tests may inject a deterministic clock.
+    check_clock = clock or (lambda: datetime.now(TW))
     if now.weekday() > 4 or not time(9, 7) <= now.time() <= time(13, 20):
         return [], "盤外或首根K與突破回踩尚未完成"
     if os.getenv("FUGLE_PRIVATE_USE_CONFIRMED") != "YES":
@@ -186,7 +192,8 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
     today = now.date().isoformat()
     index = _index_symbol(client, config, today)
     mquote = client.quote(index)
-    if not _valid_quote(mquote, index, now, expected_type="INDEX") or not _direction(mquote):
+    index_checked_at = check_clock().astimezone(TW)
+    if not _valid_quote(mquote, index, index_checked_at, expected_type="INDEX") or not _direction(mquote):
         mark("大盤即時報價或方向未確認", len(picks))
         return [], "無法驗證當日即時大盤方向"
     results = []
@@ -202,12 +209,16 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
             # canDayTrade=True denotes bidirectional stock eligibility; broker permission is a separate gate.
             buy_ok = ticker.get("canDayTrade") is True or ticker.get("canBuyDayTrade") is True
             short_ok = ticker.get("canDayTrade") is True and config.get("broker_sell_first_verified") is True
-            peer_dir = _sector_direction(client, ticker, prev, now, diagnostics=diagnostics)
+            peer_dir = _sector_direction(client, ticker, prev, now, diagnostics=diagnostics,
+                                         clock=check_clock)
             q = client.quote(symbol)
             bars = client.minute_candles(symbol)
-            if not _valid_quote(q, symbol, now):
+            # Re-evaluate at the end of the series of network requests:
+            # quote may be stale by the time K bars have been obtained.
+            checked_at = check_clock().astimezone(TW)
+            if not _valid_quote(q, symbol, checked_at):
                 mark("個股即時報價不完整或過期")
-                mark("個股報價原因：" + _quote_rejection_reason(q, symbol, now))
+                mark("個股報價原因：" + _quote_rejection_reason(q, symbol, checked_at))
                 continue
             if peer_dir == 0:
                 mark("族群方向未得到驗證")
@@ -217,7 +228,7 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
                 continue
             context = {
                 "trading_date": today, "is_trade_day": True,
-                "verified_at": now.isoformat(),
+                "verified_at": checked_at.isoformat(),
                 "source": "Fugle intraday INDEX and industry peer quotes",
                 "eligibility_source": "Fugle intraday ticker + personally verified brokerage eligibility",
                 "market_direction": _direction(mquote),
@@ -225,11 +236,11 @@ def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
                 "eligibility": {symbol: {"date": today, "buy_then_sell": buy_ok, "sell_then_buy": short_ok}},
                 "licensed_private_use": True, "sample": False,
             }
-            outcome = evaluate(symbol, q, bars, p["volume"], context, now)
+            outcome = evaluate(symbol, q, bars, p["volume"], context, checked_at)
             if outcome["direction"] in ("LONG_CONDITIONS", "SHORT_CONDITIONS"):
                 # Deliberately do not export raw market data, prices or candles.
                 results.append({"symbol": symbol, "direction": outcome["direction"],
-                                "at": now.isoformat(), "reason": "經核實五分鐘K、量能、VWAP、突破回踩及大盤族群",
+                                "at": checked_at.isoformat(), "reason": "經核實五分鐘K、量能、VWAP、突破回踩及大盤族群",
                                 "checks": outcome["checks"], "sample": False})
                 mark("完整多空條件通過")
             else:
