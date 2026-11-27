@@ -18,10 +18,10 @@ from zoneinfo import ZoneInfo
 from v1071.audit_live import audit_once
 from v1071.fugle import FugleClient
 from .key_store import load_key, SecretStoreError
-from .signal_bridge import shadow_push_summary
+from .local_dispatch import dispatch_from_private_audit
 
 TW = ZoneInfo("Asia/Taipei")
-VERSION = "V1.08-shadow.1"
+VERSION = "V1.08.2-shadow"
 PERIOD_SECONDS = 300
 ROOT = Path.home() / ".ai-daytrade-private"
 SETTINGS = ROOT / "shadow-v108-settings.json"
@@ -69,12 +69,12 @@ def scan_summary(client, now=None, audit=audit_once, clock_source=None):
     result = audit(client, now=now)
     # The post-network-request clock is injectable for deterministic CI tests.
     checked_at = (clock_source or (lambda: datetime.now(TW)))().astimezone(TW)
-    # Separate, stricter signal-to-mobile payload preparation is shadow-only.
-    # Raw candidates and prepared payloads are never persisted or delivered.
-    push = shadow_push_summary(
-        result.get("verified_signals", []), now=checked_at)
+    # No new HTTP endpoint: the *local* delivery module uses only the
+    # in-memory verified audit output. In the default unconfigured state it
+    # returns SHADOW_DISABLED without importing/calling Apple Web Push.
+    push = dispatch_from_private_audit(result, now=checked_at)
     return {
-        "version": "V1.08.1-shadow",
+        "version": VERSION,
         "checked_at": checked_at.isoformat(),
         "status": result.get("status", "unknown"),
         "qualified_count": len(result.get("signals", [])),
