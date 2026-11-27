@@ -56,9 +56,10 @@ class OwnerActivationTests(unittest.TestCase):
         }), encoding="utf-8")
 
     def _enable(self, answer="ENABLE", **kw):
+        email = kw.pop("email", self.email)
         return cli.enable(
             root=self.root, require_windows=False, clock=lambda: self.now,
-            answer=answer, email=self.email, **kw
+            answer=answer, email=email, **kw
         )
 
     def test_explicit_enable_and_matching_sole_device(self):
