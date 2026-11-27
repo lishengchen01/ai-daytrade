@@ -9,6 +9,7 @@ import ctypes
 from ctypes import wintypes
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import time as clock
@@ -51,6 +52,7 @@ def _safe_aggregate(diag):
     return {
         key: value for key, value in diag.items()
         if isinstance(key, str) and len(key) <= 90
+        and re.search(r"[0-9]{4,6}", key) is None
         and not any(x in key.lower() for x in
                     ("key", "token", "symbol", "endpoint", "http", "price"))
         and type(value) is int and 0 <= value <= 100
@@ -138,7 +140,7 @@ def run_forever():
                     read_settings()
                     client = FugleClient(key=load_key())
                     state = scan_summary(client, now=now)
-                except (OSError, ValueError, RuntimeError, SecretStoreError, Exception) as exc:
+                except Exception as exc:
                     # Log ERROR TYPE only. Never include exceptions' string,
                     # market payload, token, API key, or individual tickers.
                     state = {
