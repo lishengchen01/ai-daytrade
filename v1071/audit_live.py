@@ -29,8 +29,12 @@ def audit_once(client, now=None, daily=None):
     # process; no environment variable, registry or file is persisted.
     prior = os.environ.get("FUGLE_PRIVATE_USE_CONFIRMED")
     os.environ["FUGLE_PRIVATE_USE_CONFIRMED"] = "YES"
+    diagnostics = {}
     try:
-        signals, reason = scan_real(config, client=client, now=now, daily=daily)
+        signals, reason = scan_real(
+            config, client=client, now=now, daily=daily,
+            diagnostics=diagnostics,
+        )
     finally:
         if prior is None:
             os.environ.pop("FUGLE_PRIVATE_USE_CONFIRMED", None)
@@ -43,6 +47,7 @@ def audit_once(client, now=None, daily=None):
                     s.get("checks") and all(s["checks"].values())],
         "reason": reason,
         "requests": getattr(client, "requests_made", None),
+        "diagnostics": diagnostics,
     }
 
 
@@ -75,6 +80,13 @@ def main():
         print(symbol, "偏多" if direction == "LONG_CONDITIONS" else "偏空",
               "（僅本機研究、不是下單指令）")
     print("判斷：", result.get("reason", ""))
+    print("候選過濾原因統計（只有數量，不顯示原始行情）：")
+    counts = result.get("diagnostics", {})
+    if counts:
+        for gate, n in counts.items():
+            print(" -", gate, ":", n)
+    else:
+        print(" - 無可顯示統計；請確認是否停在整體前置條件")
     print("注意：0 候選也可能是資料不齊或 API 拒絕後的安全跳過；不能解讀為市場完全沒有機會。")
     print("本次絕不傳送手機訊號。正式自動推播仍需獨立驗證與部署。")
     return 0
