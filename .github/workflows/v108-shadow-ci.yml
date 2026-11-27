@@ -1,0 +1,33 @@
+name: V1.08 Windows private shadow scanner
+on:
+  pull_request:
+    paths:
+      - "v108/**"
+      - ".github/workflows/v108-shadow-ci.yml"
+      - "v1071/audit_live.py"
+      - "v1071/scanner.py"
+  workflow_dispatch:
+jobs:
+  private-shadow:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r v1071/requirements.txt
+      - name: Syntax check
+        run: python -m compileall -q v108
+      - name: Private shadow offline unit tests
+        run: python -m unittest v108.test_shadow v1071.test_backend v1071.test_audit_live -v
+      - name: Ensure shadow mode does not import real push or scan_loop
+        shell: pwsh
+        run: |
+          $code = (Get-Content v108/shadow_loop.py -Raw)
+          if ($code -match 'from\s+v1071\.(scan_loop|push_service)\s+import') {
+            throw 'Shadow runner cannot import production signal dispatch'
+          }
+          if ($code -match 'WEBPUSH_DERIVED_SIGNAL_ALLOWED\s*=\s*YES') {
+            throw 'Shadow runner cannot enable live signal push'
+          }
