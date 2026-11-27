@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from .local_dispatch import PRIVATE_ROOT, OPT_IN, _config
+from .local_dispatch import PRIVATE_ROOT, OPT_IN, _config, owner_device_matches
 
 
 def inspect(root=PRIVATE_ROOT, config=OPT_IN):
@@ -29,9 +29,10 @@ def inspect(root=PRIVATE_ROOT, config=OPT_IN):
                     "SELECT COUNT(*) FROM subscriptions").fetchone()[0]
         except (sqlite3.Error, ValueError):
             pass
+    cfg = _config(config)
     if (info["fugle_key_exists"] and info["vapid_key_exists"] and
-        info["push_db_exists"] and info["subscribed_device_count"] > 0 and
-        info["local_owner_opted_in"]):
+        info["push_db_exists"] and info["subscribed_device_count"] == 1 and
+        cfg and owner_device_matches(root, cfg["device_sha256"])):
         info["private_push_mode"] = "LOCAL_PRIVATE_ENABLED"
     return info
 
