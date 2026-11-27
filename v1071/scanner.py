@@ -117,8 +117,15 @@ def _sector_direction(client, ticker, prev, now):
     return directions[0] if directions[0] and directions[0] == directions[1] else 0
 
 
-def scan_real(config, client=None, now=None, daily=None):
-    """Return only research judgments, no licensed quote redistribution."""
+def scan_real(config, client=None, now=None, daily=None, diagnostics=None):
+    """Return only research judgments, with optional aggregate rejection counts.
+
+    Diagnostics are anonymized counts by gate, not raw quote or per-stock data.
+    The optional object never changes the qualification rules or sends signals.
+    """
+    def mark(reason, amount=1):
+        if diagnostics is not None:
+            diagnostics[reason] = diagnostics.get(reason, 0) + amount
     now = (now or datetime.now(TW)).astimezone(TW)
     if now.weekday() > 4 or not time(9, 7) <= now.time() <= time(13, 20):
         return [], "盤外或首根K與突破回踩尚未完成"
@@ -130,11 +137,14 @@ def scan_real(config, client=None, now=None, daily=None):
     daily = daily if daily is not None else _get_daily()
     picks, prev = _candidate_rows(daily, now.date().isoformat())
     if not picks:
+        mark("盤後候選缺失或過期")
         return [], "前交易日公開盤後初篩資料缺失或逾期"
+    mark("盤後初篩候選數", len(picks))
     today = now.date().isoformat()
     index = _index_symbol(client, config, today)
     mquote = client.quote(index)
     if not _valid_quote(mquote, index, now, expected_type="INDEX") or not _direction(mquote):
+        mark("大盤即時報價或方向未確認", len(picks))
         return [], "無法驗證當日即時大盤方向"
     results = []
     for p in picks:
@@ -144,6 +154,7 @@ def scan_real(config, client=None, now=None, daily=None):
             if (ticker.get("symbol") != symbol or ticker.get("type") != "EQUITY" or
                 ticker.get("date") != today or ticker.get("securityStatus") != "NORMAL" or
                 ticker.get("isDisposition") is True or ticker.get("matchingInterval") not in (0, None)):
+                mark("個股狀態或交易資格元資料未通過")
                 continue
             # canDayTrade=True denotes bidirectional stock eligibility; broker permission is a separate gate.
             buy_ok = ticker.get("canDayTrade") is True or ticker.get("canBuyDayTrade") is True
@@ -151,9 +162,14 @@ def scan_real(config, client=None, now=None, daily=None):
             peer_dir = _sector_direction(client, ticker, prev, now)
             q = client.quote(symbol)
             bars = client.minute_candles(symbol)
-            if not _valid_quote(q, symbol, now) or peer_dir == 0:
+            if not _valid_quote(q, symbol, now):
+                mark("個股即時報價不完整或過期")
+                continue
+            if peer_dir == 0:
+                mark("族群方向未得到驗證")
                 continue
             if bars.get("timeframe") not in ("1", 1):
+                mark("分鐘K資料格式不符合")
                 continue
             context = {
                 "trading_date": today, "is_trade_day": True,
@@ -171,6 +187,10 @@ def scan_real(config, client=None, now=None, daily=None):
                 results.append({"symbol": symbol, "direction": outcome["direction"],
                                 "at": now.isoformat(), "reason": "經核實五分鐘K、量能、VWAP、突破回踩及大盤族群",
                                 "checks": outcome["checks"], "sample": False})
+                mark("完整多空條件通過")
+            else:
+                mark("五分鐘策略或當沖資格條件未全數通過")
         except (KeyError, ValueError, TypeError, RuntimeError):
+            mark("資料欄位或行情 API 異常")
             continue   # no incomplete or unverified signal
     return results, "真實行情條件掃描完成；候選不代表可成交"
