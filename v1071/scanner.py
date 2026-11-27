@@ -74,21 +74,24 @@ def _candidate_rows(daily, today):
 
 
 def _index_symbol(client, config, today):
-    explicit = config.get("market_index_symbol")
-    if isinstance(explicit, str) and explicit:
-        t = client.ticker(explicit)
-        if t.get("symbol") != explicit or t.get("type") != "INDEX" or t.get("date") != today:
-            raise ValueError("指定大盤指數無效／日期錯誤")
-        return explicit
-    # Discover rather than inventing an index ticker code.
-    found = client.transport("intraday/tickers?type=INDEX&exchange=TWSE")
-    if found.get("date") != today or not isinstance(found.get("data"), list):
-        raise ValueError("未能核實大盤指數清單")
-    names = [r.get("symbol") for r in found["data"] if isinstance(r, dict) and
-             "加權" in str(r.get("name") or "") and "指數" in str(r.get("name") or "")]
-    if len(names) != 1:
-        raise ValueError("加權指數代碼不唯一，需設定已核實的 market_index_symbol")
-    return names[0]
+    """Prefer Fugle's officially documented TAIEX ticker IX0001.
+
+    The previous name-search required exactly one name containing both
+    「加權」and「指數」and failed for different/duplicate index names.
+    Never guess from a fuzzy search. Verify date, symbol, type and exchange
+    on every real call; any mismatch fails closed.
+    """
+    index = config.get("market_index_symbol") or "IX0001"
+    if not isinstance(index, str) or index != "IX0001":
+        raise ValueError("僅支援已核實的加權指數 IX0001")
+    ticker = client.ticker(index)
+    if (not isinstance(ticker, dict) or
+            ticker.get("symbol") != index or
+            ticker.get("type") != "INDEX" or
+            ticker.get("exchange") != "TWSE" or
+            ticker.get("date") != today):
+        raise ValueError("加權指數 IX0001 資料驗證失敗（代碼、日期、類型或交易所）")
+    return index
 
 
 def _sector_direction(client, ticker, prev, now):
